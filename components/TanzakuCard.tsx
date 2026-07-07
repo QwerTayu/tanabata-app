@@ -54,8 +54,8 @@ export function TanzakuCard({
           {tanzaku.wish}
         </p>
 
-        <div className="mt-6 flex shrink-0 flex-col items-center gap-1 pb-1">
-          <span className="max-w-[90%] text-center text-[10px] leading-tight break-words text-gray-700">
+        <div className="mt-6 flex w-full shrink-0 flex-col items-center gap-1 pb-1">
+          <span className="w-full truncate text-center text-[10px] text-gray-700">
             {displayHandle}
           </span>
           <button

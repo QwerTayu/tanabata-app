@@ -29,9 +29,9 @@
 ### 参加者共通(`/{roomId}` と `/{roomId}/admin` の両方)
 - 画面下部固定の入力バーから短冊を投稿できる(入力欄は通常の横書きでよい)
   - 「願い事」: 必須、1〜50文字
-  - 「ハンドルネーム」: 任意、〜20文字、空欄可(表示時は「名無しさん」)。一度入力した値はlocalStorageに保存し、次回以降の入力欄に自動で埋める(複数枚書く想定のため)
+  - 「ハンドルネーム」: 任意、〜8文字、空欄可(表示時は「名無しさん」)。カード幅(約100〜120px)で折り返さず1行表示するための上限。一度入力した値はlocalStorageに保存し、次回以降の入力欄に自動で埋める(複数枚書く想定のため)
   - 1人(1ブラウザ)につき、1ルームあたり最大5個まで短冊を作成できる。上限に達したら投稿フォームを無効化し、「このルームでの投稿上限(5個)に達しました」等を表示する。localStorageのカウントによるソフト制限(いいね上限と同様、性善説ベース)
-  - 「短冊の色」: 赤・黄・青の3色から1つを選択する(必須、初期選択はいずれか1色)。選んだ色がそのままカードの背景色になる。直近選んだ色はlocalStorageに保存し、次回の初期選択値にする(ハンドルネームと同様、複数枚書く想定のため)
+  - 「短冊の色」: 赤・黄・青の3色から1つを選択する(必須)。初期選択は投稿のたびにランダムに決まる(前回選んだ色は記憶しない)。選んだ色がそのままカード背景画像(`card_{color}.png`)になる
 - 投稿された短冊は即座に(Firestore onSnapshotのリアルタイム購読で)画面上のカードグリッドに反映される
   - ただし参加者画面では、管理者が「みんなに公開する」を押すまでは自分が作成した短冊のみ表示され、他人の短冊は見えない(read数節約のため)
   - 公開後は他人の短冊も含め全件閲覧可能になる
@@ -52,7 +52,7 @@
 - `rooms/{roomId}` : `{ createdAt: Timestamp, revealed: boolean }` (`roomId` = 6桁のルームキーそのもの。`revealed`は作成時`false`)
 - `rooms/{roomId}/tanzaku/{tanzakuId}` :
   - `wish: string`(1〜50文字)
-  - `handle: string`(0〜20文字、空文字許容)
+  - `handle: string`(0〜8文字、空文字許容)
   - `color: 'red' | 'yellow' | 'blue'`(投稿時にユーザーが選択。カード背景画像 `card_{color}.png` の出し分けに使用)
   - `likeCount: number`(作成時0)
   - `authorClientId: string`(投稿ブラウザのクライアントID。非公開時の「自分の短冊のみ表示」フィルタに使用)
@@ -117,7 +117,7 @@ match /databases/{database}/documents {
 ## ローカルストレージ(ブラウザごとの状態管理)
 - `tanabata:clientId` : ブラウザ初回アクセス時に生成する一意なID(`crypto.randomUUID()`など)。短冊作成時に `authorClientId` としてFirestoreに保存し、非公開時の「自分の短冊のみ表示」クエリのキーにも使う
 - `tanabata:handle` : 直近入力したハンドルネーム(次回フォームの初期値として使用)
-- `tanabata:color` : 直近選択した短冊の色(`red`/`yellow`/`blue`。次回フォームの初期選択値として使用)
+- 短冊の色は記憶しない(投稿のたびにランダムなデフォルトを選び直す)ため、色に対応するlocalStorageキーは無い
 - `tanabata:{roomId}:likes` : `{ [tanzakuId]: number }` 形式。そのルームで自分がいいねした短冊ごとの回数(上限10のソフト制限に使用)
 - `tanabata:{roomId}:createdCount` : number。そのルームで自分(このブラウザ)が作成した短冊数(上限5のソフト制限に使用)。管理者が短冊を削除しても減算しない簡易実装(削除後に投稿枠が復活しない点は許容する)
 
@@ -167,7 +167,8 @@ export interface Tanzaku extends TanzakuDoc {
 ```ts
 // lib/constants.ts
 export const WISH_MAX_LENGTH = 50;
-export const HANDLE_MAX_LENGTH = 20;
+// カード幅(約100〜120px)で折り返さず1行表示するための上限
+export const HANDLE_MAX_LENGTH = 8;
 export const MAX_TANZAKU_PER_ROOM_PER_USER = 5;
 export const MAX_LIKES_PER_TANZAKU_PER_USER = 10;
 export const ROOM_KEY_LENGTH = 6;
@@ -183,6 +184,9 @@ export const TANZAKU_COLORS: Record<TanzakuColor, { label: string; imageSrc: str
 };
 // カード画像のアスペクト比(210:574)。TanzakuCardのCSS `aspect-ratio` に使用
 export const CARD_ASPECT_RATIO = "210 / 574";
+
+// 投稿フォームの色選択は毎回ランダムなデフォルトにする(前回の色を記憶しない)
+export function getRandomTanzakuColor(): TanzakuColor;
 ```
 
 ## データアクセス層(関数シグネチャ)
@@ -209,8 +213,6 @@ async function deleteTanzaku(roomId: string, tanzakuId: string): Promise<void>;
 function getClientId(): string; // tanabata:clientId を取得、無ければcrypto.randomUUID()で生成して保存
 function getHandle(): string;
 function setHandle(handle: string): void;
-function getLastColor(): TanzakuColor; // 未設定時のデフォルトは "red" 等
-function setLastColor(color: TanzakuColor): void;
 function getCreatedCount(roomId: string): number;
 function incrementCreatedCount(roomId: string): void; // createTanzaku成功後にのみ呼ぶ
 function getLikeCount(roomId: string, tanzakuId: string): number;
