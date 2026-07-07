@@ -28,10 +28,10 @@ body {
   text-orientation: mixed;
 }
 
-/* ルームキー表示専用: 装飾フォントだと読み違えやすいため等幅フォントで可読性を優先 */
+/* ルームキー表示専用: 装飾フォント(Yuji Boku)だと読み違えやすいため使わない */
 .room-key {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas,
-    "Liberation Mono", monospace;
+  font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", -apple-system,
+    BlinkMacSystemFont, Meiryo, Arial, Helvetica, sans-serif;
   letter-spacing: 0.05em;
 }
 
