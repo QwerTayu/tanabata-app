@@ -3,7 +3,7 @@
 ## 背景・目的
 情報サークルのMTGアイスブレイク用に、七夕当日にオンラインで短冊を書いて笹に飾れるWebアプリを作る。
 参考: note記事(formrun+Canvaによる手作業の社内七夕企画) https://note.com/sales_wsff/n/n8ded5427462c
-画面デザイン参考: `doc/参加者画面イメージ.png`(パステルカラーの短冊カードを折り返しグリッドで並べるスタイル)
+画面デザイン参考: `doc/参加者画面イメージ.png`(短冊カードを1行に並べて横スクロールするスタイル)。実アセットとして `public/background.png`(ページ背景)・`public/card_r.png` / `card_y.png` / `card_b.png`(色ごとの短冊カード背景画像)を使用する
 実装リミットは当日6時間のため、認証なし・Firestoreルール全開放・無料枠運用のシンプル構成を優先する。
 
 ## 技術スタック
@@ -53,7 +53,7 @@
 - `rooms/{roomId}/tanzaku/{tanzakuId}` :
   - `wish: string`(1〜50文字)
   - `handle: string`(0〜20文字、空文字許容)
-  - `color: 'red' | 'yellow' | 'blue'`(投稿時にユーザーが選択。カードの背景色に使用)
+  - `color: 'red' | 'yellow' | 'blue'`(投稿時にユーザーが選択。カード背景画像 `card_{color}.png` の出し分けに使用)
   - `likeCount: number`(作成時0)
   - `authorClientId: string`(投稿ブラウザのクライアントID。非公開時の「自分の短冊のみ表示」フィルタに使用)
   - `createdAt: Timestamp`(`serverTimestamp()`)
@@ -93,14 +93,26 @@ match /databases/{database}/documents {
 | 30〜 | `box-shadow: 0 0 36px 12px rgba(255,180,0,1);` + 強めのpulseアニメーション |
 
 ## 画面デザイン方針(`doc/参加者画面イメージ.png` 参照)
-- ランダム散らし配置ではなく、縦長短冊カードを折り返しグリッド(CSS flex-wrap または grid)で整列表示する
-- カードの背景色は自動サイクルではなく、**投稿時にユーザーが選んだ色(赤/黄/青)** をそのまま使う(下記「色の定数」参照)
-- カードグリッドは縦スクロールで200枚規模でも閲覧可能にする
-- 画面上部や余白に簡単なルール説明・タイトル・(あれば)笹の装飾イラストを配置
-- 画面下部に固定の投稿入力バー(ハンドルネーム欄+願い事欄+送信ボタン)を配置
-- 非公開時の参加者画面では、自分の短冊のみのグリッド + 「他の人の短冊は公開までお待ちください」的な案内を表示
-- 各短冊カード: 願い事テキスト、ハンドルネーム(空なら「名無しさん」)、♡アイコン+いいね数、glow演出、(管理者画面のみ)削除ボタン
-- 短冊カード内の願い事テキストは**縦書き**で表示する(CSS `writing-mode: vertical-rl`、必要に応じて`text-orientation`を調整)。短い文字数でも縦長のタンザク感が出るよう、カードの縦横比は縦長を基本とする。入力フォーム自体は横書きのままでよい(表示のみ縦書き変換)
+- ランダム散らし配置ではなく、短冊カードを**1行に並べて横スクロール**表示する(折り返しはしない。`display: flex; overflow-x: auto; overflow-y: hidden;` の1行コンテナ)
+- カードの背景は自動サイクルの色ではなく、**投稿時にユーザーが選んだ色(赤/黄/青)に対応する `card_{color}.png` 画像**を背景画像として使う(下記「画像アセット」参照)。3ファイルとも210×574px(縦横比約1:2.73)で統一されているため、カードのアスペクト比はこの比率で固定する
+- 背景全体には `public/background.png`(700×490px、星空+笹のイラスト)を `background-size: cover; background-attachment: fixed;` でページ背景として敷く
+- 画面上部や余白に簡単なルール説明・タイトルを配置
+- 画面下部に固定の投稿入力バー(ハンドルネーム欄+願い事欄+色選択+送信ボタン)を配置
+- 非公開時の参加者画面では、自分の短冊のみの横スクロール行 + 「他の人の短冊は公開までお待ちください」的な案内を表示
+- 各短冊カード: 願い事テキスト(縦書き)、ハンドルネーム(空なら「名無しさん」)、♡アイコン+いいね数、glow演出、(管理者画面のみ)削除ボタン
+- 短冊カード内の願い事テキストは**縦書き**で表示する(CSS `writing-mode: vertical-rl`、必要に応じて`text-orientation`を調整)。入力フォーム自体は横書きのままでよい(表示のみ縦書き変換)
+- カード画像は上部に紐を通す穴の絵、下部に星の飾りの絵が既に描き込まれているため、テキストやアイコンはその間の余白部分(目安: 上18%・下22%を避けた中央帯)に配置する
+
+## 画像アセット(`public/`)
+| ファイル | サイズ | 用途 |
+|---|---|---|
+| `background.png` | 700×490px | ページ全体の背景(星空+笹のイラスト) |
+| `card_r.png` | 210×574px | `color: 'red'` の短冊カード背景 |
+| `card_y.png` | 210×574px | `color: 'yellow'` の短冊カード背景 |
+| `card_b.png` | 210×574px | `color: 'blue'` の短冊カード背景 |
+
+**パフォーマンスについて**: `card_{color}.png` は3種類しか実体がないため、200枚のカードが同じファイルを`background-image`として参照しても、ブラウザは各ファイルを1回しかダウンロード/デコードしない(URLが同じ画像はキャッシュ共有される)。したがって画像化によって読み込みが重くなることはない。
+「画面に見えていないカードの描画负荷を遅らせたい」という要望には、CSSの `content-visibility: auto`(+ `contain-intrinsic-size` でおおよそのカードサイズを指定)を各`TanzakuCard`に指定する方式で対応する。ビューポート外のカードはブラウザがレイアウト・ペイントを自動的にスキップするため、JS側で仮想スクロールライブラリを導入する必要がない(6時間の実装リミットに合う簡易策)。
 
 ## ローカルストレージ(ブラウザごとの状態管理)
 - `tanabata:clientId` : ブラウザ初回アクセス時に生成する一意なID(`crypto.randomUUID()`など)。短冊作成時に `authorClientId` としてFirestoreに保存し、非公開時の「自分の短冊のみ表示」クエリのキーにも使う
@@ -114,6 +126,7 @@ match /databases/{database}/documents {
 - `app/[roomId]/page.tsx` : 参加者画面
 - `app/[roomId]/admin/page.tsx` : 管理者画面
 - 参加者画面・管理者画面は `TanzakuGrid` / `TanzakuCard` / `TanzakuForm` を共通利用し、`isAdmin` propで削除ボタン・ルーム削除・共有ボタン・公開トグルの表示有無のみ出し分ける
+- `TanzakuGrid` は横スクロールコンテナ(`overflow-x: auto`)の中に `TanzakuCard` を1行(`flex`)で並べるだけのシンプルな実装でよい(折り返し・座標計算は不要)。各`TanzakuCard`に`content-visibility: auto`を指定し、画面外カードの描画コストを抑える
 - `lib/firebase/client.ts` : Firebase Client SDK初期化(`NEXT_PUBLIC_FIREBASE_*` 環境変数)
 - `useRoomTanzaku(roomId, isAdmin)` フック:
   - `rooms/{roomId}` を `onSnapshot` で購読して `revealed` を取得
@@ -162,12 +175,14 @@ export const ROOM_KEY_LENGTH = 6;
 export const ROOM_KEY_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 export const ROOM_KEY_CREATE_MAX_RETRIES = 5;
 
-// 色の定数(パステル寄りの背景色。微調整可)
-export const TANZAKU_COLORS: Record<TanzakuColor, { label: string; bg: string }> = {
-  red: { label: "赤", bg: "#FFB3B3" },
-  yellow: { label: "黄", bg: "#FFEC99" },
-  blue: { label: "青", bg: "#A5D8FF" },
+// 色の定数: imageSrcが実際のカード背景画像、bgは画像読み込み前/失敗時のフォールバック色
+export const TANZAKU_COLORS: Record<TanzakuColor, { label: string; imageSrc: string; bg: string }> = {
+  red: { label: "赤", imageSrc: "/card_r.png", bg: "#FFB3B3" },
+  yellow: { label: "黄", imageSrc: "/card_y.png", bg: "#FFEC99" },
+  blue: { label: "青", imageSrc: "/card_b.png", bg: "#A5D8FF" },
 };
+// カード画像のアスペクト比(210:574)。TanzakuCardのCSS `aspect-ratio` に使用
+export const CARD_ASPECT_RATIO = "210 / 574";
 ```
 
 ## データアクセス層(関数シグネチャ)
@@ -226,6 +241,7 @@ function useRoomTanzaku(roomId: string, isAdmin: boolean): {
 - 個別短冊の削除(管理者)は確認ダイアログなしで即時実行してよい。ルーム全体の削除のみ確認ダイアログを挟む(取り返しがつかないため)
 - `deleteRoomCascade` は `writeBatch` 1回(上限500件)で完結する前提(想定最大200短冊+ルームドキュメント1件=201件のため)。それ以上の規模のルームは非対応(スコープ外、想定30人には十分)
 - 願い事の内容に対する自動検閲(NGワードフィルタ等)は行わない。管理者が目視で気づいた短冊を手動削除する運用とする
+- `TanzakuCard` の背景画像は `background-image: url(...)` + `background-size: cover` で指定し、カード自体は `aspect-ratio: 210 / 574` で固定する(画像と完全に同じ比率なのでcoverでも欠けない)。`next/image`の`fill`は必須ではないが、使う場合はコンテナの位置指定(`position: relative`)を忘れない
 
 ## 環境変数
 ```
@@ -259,6 +275,12 @@ NEXT_PUBLIC_FIREBASE_APP_ID
 10. バッファ: 20〜30分
 
 ## 未確定・後で決めること
-- カードの配色サイクルの具体的な色コード・glowの色/閾値の微調整
+- glowの色/閾値の微調整
+- カード画像内の「余白帯(テキストを置ける範囲)」の正確なpadding値(見た目を見ながら微調整)
 - ルール文の最終的な文言(画像はサンプルなので当日の内容に合わせて調整)
 - 「公開」のタイミングをMTG内のどの瞬間にするか(進行との兼ね合いは当日の運用で決める)
+
+## メモ
+画像のDL元
+- https://www.illust-pocket.com/illust/6704
+- https://illust-ryokka.jp/scenery/event-scenery/tanabata-2/
