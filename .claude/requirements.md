@@ -49,7 +49,7 @@
 - 「みんなに公開する」トグルボタン: `rooms/{roomId}.revealed` を `true`/`false` に切り替える(再度非公開に戻すことも可能)
 - 各短冊カードに削除ボタンが表示され、押すとその短冊が削除される(`deleteDoc`)
 - 「ルームを削除」ボタン: 確認ダイアログの後、そのルームの短冊を全件削除(バッチ削除。最大200件程度なのでFirestoreの1バッチ500件制限内で収まる)→ ルームドキュメント自体を削除 → `/` へリダイレクト
-- 「共有」ボタン: 参加者用リンク `https://<host>/{roomId}` をクリップボードにコピーする(トースト等で「コピーしました」を表示)
+- 「共有する」ボタン: モーダルを開き、ルームキーを画面中央に大きく表示 + 参加者用リンク `https://<host>/{roomId}` のQRコード(`qrcode.react`の`QRCodeSVG`で生成、外部API不使用)を表示する。モーダル内の「リンクをコピーする」ボタンでクリップボードにコピーできる(コピー後は「コピーしました」表示)
 
 ## データモデル(Firestore)
 - `rooms/{roomId}` : `{ createdAt: Timestamp, revealed: boolean }` (`roomId` = 6桁のルームキーそのもの。`revealed`は作成時`false`)
@@ -133,6 +133,7 @@ match /databases/{database}/documents {
 - `components/RoomView.tsx` : 参加者画面・管理者画面で共通利用。マウント時に`clientId`と`handle`をlocalStorageから読み込み、`handle`が未設定(空文字)ならハンドルネーム入力ゲートを表示してからでないと本文(`TanzakuGrid`/`TanzakuForm`)を描画しない
 - 参加者画面・管理者画面は `TanzakuGrid` / `TanzakuCard` / `TanzakuForm` を共通利用し、`isAdmin` propで削除ボタン・ルーム削除・共有ボタン・公開トグルの表示有無のみ出し分ける
 - `TanzakuForm` はハンドルネームの自由入力欄を持たず、`RoomView`から確定済みの`handle`をpropで受け取る。表示する代わりに「名前を表示する/しない」トグルを持つ
+- `components/ShareModal.tsx` : 「共有する」ボタンで開くモーダル。ルームキー(大表示)・QRコード(`qrcode.react`)・共有URL・コピー ボタンを表示する
 - `TanzakuGrid` は横スクロールコンテナ(`overflow-x: auto`)の中に `TanzakuCard` を1行(`flex`)で並べるだけのシンプルな実装でよい(折り返し・座標計算は不要)。各`TanzakuCard`に`content-visibility: auto`を指定し、画面外カードの描画コストを抑える
 - `lib/firebase/client.ts` : Firebase Client SDK初期化(`NEXT_PUBLIC_FIREBASE_*` 環境変数)
 - `useRoomTanzaku(roomId, isAdmin)` フック:

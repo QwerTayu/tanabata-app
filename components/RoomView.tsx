@@ -12,6 +12,7 @@ import {
 } from "@/lib/localStorage";
 import { deleteRoomCascade, setRevealed } from "@/lib/rooms";
 import { deleteTanzaku } from "@/lib/tanzaku";
+import { ShareModal } from "./ShareModal";
 import { TanzakuForm } from "./TanzakuForm";
 import { TanzakuGrid } from "./TanzakuGrid";
 
@@ -33,7 +34,7 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
   const [gateError, setGateError] = useState<string | null>(null);
   const [toggling, setToggling] = useState(false);
   const [deletingRoom, setDeletingRoom] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   useEffect(() => {
     // ブラウザのlocalStorageから読むだけの初期化なので、マウント後1回だけ実行する
@@ -111,13 +112,6 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
     }
   }
 
-  async function handleShare() {
-    const url = `${window.location.origin}/${roomId}`;
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
   async function handleDeleteRoom() {
     if (!window.confirm("このルームを削除します。よろしいですか？")) return;
     setDeletingRoom(true);
@@ -156,10 +150,10 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
           </button>
           <button
             type="button"
-            onClick={handleShare}
+            onClick={() => setShowShareModal(true)}
             className="rounded bg-white/20 px-3 py-1"
           >
-            {copied ? "コピーしました" : "共有リンクをコピー"}
+            共有する
           </button>
           <button
             type="button"
@@ -196,6 +190,14 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
       </div>
 
       <TanzakuForm roomId={roomId} clientId={clientId} handle={handle} />
+
+      {showShareModal && (
+        <ShareModal
+          roomId={roomId}
+          shareUrl={`${window.location.origin}/${roomId}`}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
     </main>
   );
 }
