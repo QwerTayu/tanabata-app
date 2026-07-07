@@ -54,8 +54,8 @@ export function TanzakuCard({
           {tanzaku.wish}
         </p>
 
-        <div className="flex shrink-0 flex-col items-center gap-0.5 pb-1">
-          <span className="max-w-[90%] truncate text-[10px] text-gray-700">
+        <div className="mt-6 flex shrink-0 flex-col items-center gap-1 pb-1">
+          <span className="max-w-[90%] text-center text-[10px] leading-tight break-words text-gray-700">
             {displayHandle}
           </span>
           <button
@@ -63,10 +63,16 @@ export function TanzakuCard({
             onClick={() => canLike && onLike(tanzaku.id)}
             disabled={!canLike}
             aria-label="いいね"
-            className="flex items-center gap-0.5 text-xs disabled:opacity-50"
+            className="flex items-center gap-1 disabled:opacity-50"
           >
-            <span>{tanzaku.likeCount > 0 ? "❤" : "♡"}</span>
-            <span>{tanzaku.likeCount}</span>
+            <span className="text-xl leading-none">
+              {tanzaku.likeCount > 0 ? "❤" : "♡"}
+            </span>
+            {isAdmin && (
+              <span className="text-[10px] text-gray-700">
+                {tanzaku.likeCount}
+              </span>
+            )}
           </button>
         </div>
       </div>

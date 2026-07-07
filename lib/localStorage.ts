@@ -1,8 +1,5 @@
-import type { TanzakuColor } from "./types";
-
 const CLIENT_ID_KEY = "tanabata:clientId";
 const HANDLE_KEY = "tanabata:handle";
-const COLOR_KEY = "tanabata:color";
 
 function likesKey(roomId: string): string {
   return `tanabata:${roomId}:likes`;
@@ -34,20 +31,6 @@ export function getHandle(): string {
 export function setHandle(handle: string): void {
   if (!isBrowser()) return;
   window.localStorage.setItem(HANDLE_KEY, handle);
-}
-
-export function getLastColor(): TanzakuColor {
-  if (!isBrowser()) return "red";
-  const stored = window.localStorage.getItem(COLOR_KEY);
-  if (stored === "red" || stored === "yellow" || stored === "blue") {
-    return stored;
-  }
-  return "red";
-}
-
-export function setLastColor(color: TanzakuColor): void {
-  if (!isBrowser()) return;
-  window.localStorage.setItem(COLOR_KEY, color);
 }
 
 export function getCreatedCount(roomId: string): number {

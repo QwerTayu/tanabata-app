@@ -21,3 +21,11 @@ export const TANZAKU_COLORS: Record<
 
 // カード画像のアスペクト比(210:574)。TanzakuCardのCSS `aspect-ratio` に使用
 export const CARD_ASPECT_RATIO = "210 / 574";
+
+const TANZAKU_COLOR_KEYS = Object.keys(TANZAKU_COLORS) as TanzakuColor[];
+
+// 投稿フォームの色選択は毎回ランダムなデフォルトにする(前回の色を記憶しない)
+export function getRandomTanzakuColor(): TanzakuColor {
+  const index = Math.floor(Math.random() * TANZAKU_COLOR_KEYS.length);
+  return TANZAKU_COLOR_KEYS[index];
+}

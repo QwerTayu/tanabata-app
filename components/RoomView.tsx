@@ -84,20 +84,11 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
 
   return (
     <main className="flex flex-1 flex-col text-white">
-      <header className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
-        <div>
-          <span className="font-bold">ルーム: {roomId}</span>
-          {isAdmin && (
-            <span className="ml-2 rounded bg-white/20 px-2 py-0.5">
-              管理者
-            </span>
-          )}
-        </div>
-        <ul className="text-white/70">
-          <li>・50文字以内で願い事を書いてね</li>
-          <li>・他の人の短冊にいいねを送れるよ(1つの短冊につき10回まで)</li>
-          <li>・他の人が嫌な気持ちになる願い事は書かないでね</li>
-        </ul>
+      <header className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
+        <span className="font-bold">ルーム: {roomId}</span>
+        {isAdmin && (
+          <span className="rounded bg-white/20 px-2 py-0.5">管理者</span>
+        )}
       </header>
 
       {isAdmin && (
@@ -134,13 +125,21 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
         </p>
       )}
 
-      <div className="flex flex-1 items-center overflow-hidden">
+      <div className="flex flex-1 flex-col items-start overflow-hidden pt-2">
         <TanzakuGrid
           roomId={roomId}
           tanzakuList={tanzakuList}
           isAdmin={isAdmin}
           onDelete={isAdmin ? handleDeleteTanzaku : undefined}
         />
+      </div>
+
+      <div className="mx-3 mb-2 rounded-2xl border-2 border-[#6b4423] bg-[#a9764f]/90 px-4 py-2 text-xs text-white shadow-md">
+        <ul className="space-y-0.5">
+          <li>・50文字以内で願い事を書いてね</li>
+          <li>・他の人の短冊にいいねを送れるよ(1つの短冊につき10回まで)</li>
+          <li>・他の人が嫌な気持ちになる願い事は書かないでね</li>
+        </ul>
       </div>
 
       <TanzakuForm roomId={roomId} clientId={clientId} />
