@@ -1,5 +1,6 @@
 const CLIENT_ID_KEY = "tanabata:clientId";
 const HANDLE_KEY = "tanabata:handle";
+const SHOW_HANDLE_KEY = "tanabata:showHandle";
 
 function likesKey(roomId: string): string {
   return `tanabata:${roomId}:likes`;
@@ -31,6 +32,17 @@ export function getHandle(): string {
 export function setHandle(handle: string): void {
   if (!isBrowser()) return;
   window.localStorage.setItem(HANDLE_KEY, handle);
+}
+
+export function getShowHandle(): boolean {
+  if (!isBrowser()) return true;
+  const stored = window.localStorage.getItem(SHOW_HANDLE_KEY);
+  return stored === null ? true : stored === "true";
+}
+
+export function setShowHandle(value: boolean): void {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(SHOW_HANDLE_KEY, String(value));
 }
 
 export function getCreatedCount(roomId: string): number {

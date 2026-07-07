@@ -2,9 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRoomTanzaku } from "@/hooks/useRoomTanzaku";
-import { getClientId } from "@/lib/localStorage";
+import { HANDLE_MAX_LENGTH } from "@/lib/constants";
+import {
+  getClientId,
+  getHandle,
+  setHandle as saveHandle,
+} from "@/lib/localStorage";
 import { deleteRoomCascade, setRevealed } from "@/lib/rooms";
 import { deleteTanzaku } from "@/lib/tanzaku";
 import { TanzakuForm } from "./TanzakuForm";
@@ -22,6 +27,10 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
     isAdmin,
   );
   const [clientId, setClientId] = useState("");
+  // null = localStorage未読込、"" = 読込済みだが未設定、それ以外 = 設定済み
+  const [handle, setHandleState] = useState<string | null>(null);
+  const [gateHandleInput, setGateHandleInput] = useState("");
+  const [gateError, setGateError] = useState<string | null>(null);
   const [toggling, setToggling] = useState(false);
   const [deletingRoom, setDeletingRoom] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -30,6 +39,7 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
     // ブラウザのlocalStorageから読むだけの初期化なので、マウント後1回だけ実行する
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setClientId(getClientId());
+    setHandleState(getHandle());
   }, []);
 
   if (error) {
@@ -43,10 +53,51 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
     );
   }
 
-  if (loading || !clientId) {
+  if (loading || !clientId || handle === null) {
     return (
       <main className="flex flex-1 items-center justify-center text-white/70">
         読み込み中…
+      </main>
+    );
+  }
+
+  function handleGateSubmit(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = gateHandleInput.trim();
+    if (!trimmed) {
+      setGateError("ハンドルネームを入力してください");
+      return;
+    }
+    saveHandle(trimmed);
+    setHandleState(trimmed);
+  }
+
+  if (handle === "") {
+    return (
+      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-4 text-center text-white">
+        <p>このルームに入るにはハンドルネームが必要です</p>
+        <form
+          onSubmit={handleGateSubmit}
+          className="flex flex-col items-center gap-3"
+        >
+          <input
+            type="text"
+            value={gateHandleInput}
+            onChange={(e) =>
+              setGateHandleInput(e.target.value.slice(0, HANDLE_MAX_LENGTH))
+            }
+            placeholder="ハンドルネーム(必須)"
+            maxLength={HANDLE_MAX_LENGTH}
+            className="w-48 rounded border border-white/30 bg-white/90 px-3 py-2 text-center text-gray-900"
+          />
+          <button
+            type="submit"
+            className="w-48 rounded bg-yellow-400 px-4 py-2 font-bold text-gray-900"
+          >
+            入室する
+          </button>
+          {gateError && <p className="text-sm text-red-300">{gateError}</p>}
+        </form>
       </main>
     );
   }
@@ -144,7 +195,7 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
         </ul>
       </div>
 
-      <TanzakuForm roomId={roomId} clientId={clientId} />
+      <TanzakuForm roomId={roomId} clientId={clientId} handle={handle} />
     </main>
   );
 }

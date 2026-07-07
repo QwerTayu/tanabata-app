@@ -13,10 +13,13 @@
 - ※firebase-admin SDK・API Route・トークン認証などは使用しない(意図的にシンプル化)
 
 ## ユーザーフロー / ルーティング
-- `/` : ルームキー(英数字6桁)入力欄 + 「ルーム作成」ボタン
-  - キー入力→参加: 入力値の `rooms/{roomId}` の存在確認後、`/{roomId}` へ遷移(存在しなければエラー表示)
-  - ルーム作成: クライアントでランダムな6桁roomKeyを生成し(紛らわしい文字 0/O, 1/I/L 等は除外)、`rooms/{roomKey}` を `revealed: false` で作成 → 作成者はそのまま `/{roomKey}/admin` へ遷移
+- `/` : ハンドルネーム入力欄(必須、参加・作成どちらにも共通) + ルームキー(英数字6桁)入力欄 + 「ルーム作成」ボタン
+  - ハンドルネームが空のまま参加/作成しようとした場合はエラー表示して処理を中断する
+  - キー入力→参加: ハンドルネーム確定後、入力値の `rooms/{roomId}` の存在確認を行い、`/{roomId}` へ遷移(存在しなければエラー表示)
+  - ルーム作成: ハンドルネーム確定後、クライアントでランダムな6桁roomKeyを生成し(紛らわしい文字 0/O, 1/I/L 等は除外)、`rooms/{roomKey}` を `revealed: false` で作成 → 作成者はそのまま `/{roomKey}/admin` へ遷移
+  - 確定したハンドルネームはlocalStorageに保存する(次回訪問時に入力欄へプリフィルされる。空にはできないが、再入力して上書きすることは可能)
 - `/{roomId}` : 参加者画面(短冊カードグリッド閲覧・いいね・短冊投稿)
+  - 共有リンク経由の直接アクセス等でlocalStorageにハンドルネームが無い場合、短冊の閲覧・投稿の前に「ニックネームを入力してください」という必須の入室ゲートを表示する(トップページを経由しない参加者向けの保険)
   - `revealed` が `false` の間は、自分(`authorClientId`が一致するもの)が作成した短冊のみ表示。「他の人の短冊は管理者が公開するまでお待ちください」等のメッセージを表示
   - `revealed` が `true` になった瞬間、自動的に全員分の短冊表示に切り替わる(リアルタイム反映)
 - `/{roomId}/admin` : 管理者画面(参加者画面の全機能 + 短冊削除・ルーム削除・共有ボタン・公開トグル)
@@ -29,7 +32,7 @@
 ### 参加者共通(`/{roomId}` と `/{roomId}/admin` の両方)
 - 画面下部固定の入力バーから短冊を投稿できる(入力欄は通常の横書きでよい)
   - 「願い事」: 必須、1〜50文字
-  - 「ハンドルネーム」: 任意、〜8文字、空欄可(表示時は「名無しさん」)。カード幅(約100〜120px)で折り返さず1行表示するための上限。一度入力した値はlocalStorageに保存し、次回以降の入力欄に自動で埋める(複数枚書く想定のため)
+  - ハンドルネームはルーム入室時(`/`または入室ゲート)に確定済みのものを使う。投稿フォーム内では自由入力できない(なりすまし防止のため、投稿のたびに名前を変えられないようにする)。代わりに「名前を表示する/しない」トグルがあり、OFFにして投稿した短冊は匿名表示(「ななしさん」)になる。トグルは投稿ごとに選べ、選択状態はlocalStorageに保存され次回投稿時のデフォルトになる(過去に投稿済みの短冊には遡って影響しない)
   - 1人(1ブラウザ)につき、1ルームあたり最大5個まで短冊を作成できる。上限に達したら投稿フォームを無効化し、「このルームでの投稿上限(5個)に達しました」等を表示する。localStorageのカウントによるソフト制限(いいね上限と同様、性善説ベース)
   - 「短冊の色」: 赤・黄・青の3色から1つを選択する(必須)。初期選択は投稿のたびにランダムに決まる(前回選んだ色は記憶しない)。選んだ色がそのままカード背景画像(`card_{color}.png`)になる
 - 投稿された短冊は即座に(Firestore onSnapshotのリアルタイム購読で)画面上のカードグリッドに反映される
@@ -52,7 +55,7 @@
 - `rooms/{roomId}` : `{ createdAt: Timestamp, revealed: boolean }` (`roomId` = 6桁のルームキーそのもの。`revealed`は作成時`false`)
 - `rooms/{roomId}/tanzaku/{tanzakuId}` :
   - `wish: string`(1〜50文字)
-  - `handle: string`(0〜8文字、空文字許容)
+  - `handle: string`(0〜8文字、空文字許容。投稿時に「名前を表示しない」を選んだ場合は空文字で保存する)
   - `color: 'red' | 'yellow' | 'blue'`(投稿時にユーザーが選択。カード背景画像 `card_{color}.png` の出し分けに使用)
   - `likeCount: number`(作成時0)
   - `authorClientId: string`(投稿ブラウザのクライアントID。非公開時の「自分の短冊のみ表示」フィルタに使用)
@@ -73,6 +76,7 @@ match /databases/{database}/documents {
 バリデーション(文字数上限など)はクライアント側(フォーム送信前)でのみ行う。「非公開時は自分の短冊しか見えない」もクライアントのクエリ条件(`where('authorClientId','==',myClientId)`)による制御であり、ルール上は誰でも全件readできる点に注意(ブラウザの開発者ツール等で直接Firestoreを叩けば非公開中でも他人の短冊を読めてしまう。1日限りのアイスブレイク用途として許容する)。
 
 **既知のトレードオフ**: ルームIDさえ分かれば誰でも `/{roomId}/admin` に到達でき、公開トグルや削除も操作できてしまう(サーバー側の強制なし)。
+また、ハンドルネームの保存もlocalStorageのみで認証は無いため、別ブラウザ/シークレットウィンドウ/localStorage削除を使えば誰でも同じ名前を再度名乗ることは技術的に可能(完全な、なりすまし防止ではない)。今回の変更で防ぎたいのは「同じルームに滞在中に投稿のたびに気軽に名前を変えられる」状態であり、それ以上の強い保証はしない。
 
 ## 運用上の注意(Firestore無料枠について)
 - **無料枠(Sparkプラン)のまま運用する前提**で設計する
@@ -97,9 +101,9 @@ match /databases/{database}/documents {
 - カードの背景は自動サイクルの色ではなく、**投稿時にユーザーが選んだ色(赤/黄/青)に対応する `card_{color}.png` 画像**を背景画像として使う(下記「画像アセット」参照)。3ファイルとも210×574px(縦横比約1:2.73)で統一されているため、カードのアスペクト比はこの比率で固定する
 - 背景全体には `public/background.png`(700×490px、星空+笹のイラスト)を `background-size: cover; background-attachment: fixed;` でページ背景として敷く
 - 画面上部や余白に簡単なルール説明・タイトルを配置
-- 画面下部に固定の投稿入力バー(ハンドルネーム欄+願い事欄+色選択+送信ボタン)を配置
+- 画面下部に固定の投稿入力バー(名前表示トグル+願い事欄+色選択+送信ボタン)を配置。ハンドルネームの自由入力欄はここには置かない(入室時に確定済みのため)
 - 非公開時の参加者画面では、自分の短冊のみの横スクロール行 + 「他の人の短冊は公開までお待ちください」的な案内を表示
-- 各短冊カード: 願い事テキスト(縦書き)、ハンドルネーム(空なら「名無しさん」)、♡アイコン+いいね数、glow演出、(管理者画面のみ)削除ボタン
+- 各短冊カード: 願い事テキスト(縦書き)、ハンドルネーム(空なら「ななしさん」)、♡アイコン+いいね数、glow演出、(管理者画面のみ)削除ボタン
 - 短冊カード内の願い事テキストは**縦書き**で表示する(CSS `writing-mode: vertical-rl`、必要に応じて`text-orientation`を調整)。入力フォーム自体は横書きのままでよい(表示のみ縦書き変換)
 - カード画像は上部に紐を通す穴の絵、下部に星の飾りの絵が既に描き込まれているため、テキストやアイコンはその間の余白部分(目安: 上18%・下22%を避けた中央帯)に配置する
 
@@ -116,16 +120,19 @@ match /databases/{database}/documents {
 
 ## ローカルストレージ(ブラウザごとの状態管理)
 - `tanabata:clientId` : ブラウザ初回アクセス時に生成する一意なID(`crypto.randomUUID()`など)。短冊作成時に `authorClientId` としてFirestoreに保存し、非公開時の「自分の短冊のみ表示」クエリのキーにも使う
-- `tanabata:handle` : 直近入力したハンドルネーム(次回フォームの初期値として使用)
+- `tanabata:handle` : ルーム入室時(`/`または入室ゲート)に確定したハンドルネーム。ルーム内の投稿フォームでは編集できず、この値がそのまま(または非表示トグルONなら空文字に置き換えて)投稿される
+- `tanabata:showHandle` : 「名前を表示する/しない」トグルの状態(`"true"`/`"false"`、未設定時は表示する扱い)。次回投稿時のトグル初期値として使用
 - 短冊の色は記憶しない(投稿のたびにランダムなデフォルトを選び直す)ため、色に対応するlocalStorageキーは無い
-- `tanabata:{roomId}:likes` : `{ [tanzakuId]: number }` 形式。そのルームで自分がいいねした短冊ごとの回数(上限10のソフト制限に使用)
+- `tanabata:{roomId}:likes` : `{ [tanzakuId]: number }` 形式。そのルームで自分がいいねした短冊ごとの回数(上限3のソフト制限に使用)
 - `tanabata:{roomId}:createdCount` : number。そのルームで自分(このブラウザ)が作成した短冊数(上限5のソフト制限に使用)。管理者が短冊を削除しても減算しない簡易実装(削除後に投稿枠が復活しない点は許容する)
 
 ## コンポーネント構成の方針
-- `app/page.tsx` : ルームキー入力 + ルーム作成
-- `app/[roomId]/page.tsx` : 参加者画面
-- `app/[roomId]/admin/page.tsx` : 管理者画面
+- `app/page.tsx` : ハンドルネーム入力(必須) + ルームキー入力 + ルーム作成
+- `app/[roomId]/page.tsx` : 参加者画面(`RoomView`をレンダリングするだけの薄いページ)
+- `app/[roomId]/admin/page.tsx` : 管理者画面(同上、`isAdmin=true`)
+- `components/RoomView.tsx` : 参加者画面・管理者画面で共通利用。マウント時に`clientId`と`handle`をlocalStorageから読み込み、`handle`が未設定(空文字)ならハンドルネーム入力ゲートを表示してからでないと本文(`TanzakuGrid`/`TanzakuForm`)を描画しない
 - 参加者画面・管理者画面は `TanzakuGrid` / `TanzakuCard` / `TanzakuForm` を共通利用し、`isAdmin` propで削除ボタン・ルーム削除・共有ボタン・公開トグルの表示有無のみ出し分ける
+- `TanzakuForm` はハンドルネームの自由入力欄を持たず、`RoomView`から確定済みの`handle`をpropで受け取る。表示する代わりに「名前を表示する/しない」トグルを持つ
 - `TanzakuGrid` は横スクロールコンテナ(`overflow-x: auto`)の中に `TanzakuCard` を1行(`flex`)で並べるだけのシンプルな実装でよい(折り返し・座標計算は不要)。各`TanzakuCard`に`content-visibility: auto`を指定し、画面外カードの描画コストを抑える
 - `lib/firebase/client.ts` : Firebase Client SDK初期化(`NEXT_PUBLIC_FIREBASE_*` 環境変数)
 - `useRoomTanzaku(roomId, isAdmin)` フック:
@@ -211,8 +218,10 @@ async function deleteTanzaku(roomId: string, tanzakuId: string): Promise<void>;
 ```ts
 // lib/localStorage.ts
 function getClientId(): string; // tanabata:clientId を取得、無ければcrypto.randomUUID()で生成して保存
-function getHandle(): string;
+function getHandle(): string; // 未設定時は "" を返す(=入室ゲートを出す判定に使う)
 function setHandle(handle: string): void;
+function getShowHandle(): boolean; // 未設定時はtrue
+function setShowHandle(value: boolean): void;
 function getCreatedCount(roomId: string): number;
 function incrementCreatedCount(roomId: string): void; // createTanzaku成功後にのみ呼ぶ
 function getLikeCount(roomId: string, tanzakuId: string): number;
@@ -245,6 +254,7 @@ function useRoomTanzaku(roomId: string, isAdmin: boolean): {
 - 願い事の内容に対する自動検閲(NGワードフィルタ等)は行わない。管理者が目視で気づいた短冊を手動削除する運用とする
 - `TanzakuCard` の背景画像は `background-image: url(...)` + `background-size: cover` で指定し、カード自体は `aspect-ratio: 210 / 574` で固定する(画像と完全に同じ比率なのでcoverでも欠けない)。`next/image`の`fill`は必須ではないが、使う場合はコンテナの位置指定(`position: relative`)を忘れない
 - `subscribeTanzaku` は Firestore側で `where('authorClientId','==',...).orderBy('createdAt')` のような**フィールドが異なるwhere+orderByの組み合わせ**を使わない(複合インデックスの作成が必要になり、実行時に「index を作ってください」エラーで詰まりやすいため)。絞り込みは `where` のみをFirestoreに投げ、並び替え(`createdAt`昇順)は取得後にクライアント側の配列ソートで行う
+- `RoomView`での`handle`の状態は `null`(localStorage未読込)/ `""`(読込済みだが未設定=入室ゲートを出す)/ それ以外(設定済み)の3値で判定する。`clientId`のような「空文字=未読込」の2値判定を流用すると、「読込中」と「本当に未設定」を区別できず入室ゲートが誤って一瞬表示される(または表示されない)ので注意
 
 ## 環境変数
 ```

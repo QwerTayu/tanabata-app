@@ -1,19 +1,32 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
-import { ROOM_KEY_LENGTH } from "@/lib/constants";
+import { useEffect, useState, type FormEvent } from "react";
+import { HANDLE_MAX_LENGTH, ROOM_KEY_LENGTH } from "@/lib/constants";
+import { getHandle, setHandle as saveHandle } from "@/lib/localStorage";
 import { createRoom, getRoom } from "@/lib/rooms";
 
 export default function HomePage() {
   const router = useRouter();
+  const [handleInput, setHandleInput] = useState("");
   const [roomKeyInput, setRoomKeyInput] = useState("");
   const [joining, setJoining] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    // ブラウザのlocalStorageから読むだけの初期化なので、マウント後1回だけ実行する
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHandleInput(getHandle());
+  }, []);
+
   async function handleJoin(e: FormEvent) {
     e.preventDefault();
+    const handle = handleInput.trim();
+    if (!handle) {
+      setError("ハンドルネームを入力してください");
+      return;
+    }
     const roomKey = roomKeyInput.trim().toUpperCase();
     if (roomKey.length !== ROOM_KEY_LENGTH) {
       setError(`ルームキーは${ROOM_KEY_LENGTH}桁で入力してください`);
@@ -27,6 +40,7 @@ export default function HomePage() {
         setError("ルームが見つかりません");
         return;
       }
+      saveHandle(handle);
       router.push(`/${roomKey}`);
     } catch {
       setError("エラーが発生しました。もう一度お試しください。");
@@ -36,10 +50,16 @@ export default function HomePage() {
   }
 
   async function handleCreate() {
+    const handle = handleInput.trim();
+    if (!handle) {
+      setError("ハンドルネームを入力してください");
+      return;
+    }
     setCreating(true);
     setError(null);
     try {
       const roomKey = await createRoom();
+      saveHandle(handle);
       router.push(`/${roomKey}/admin`);
     } catch {
       setError("ルーム作成に失敗しました。もう一度お試しください。");
@@ -51,6 +71,15 @@ export default function HomePage() {
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-8 px-4 text-white">
       <h1 className="text-2xl font-bold">七夕オンライン短冊</h1>
+
+      <input
+        type="text"
+        value={handleInput}
+        onChange={(e) => setHandleInput(e.target.value.slice(0, HANDLE_MAX_LENGTH))}
+        placeholder="ハンドルネーム(必須)"
+        maxLength={HANDLE_MAX_LENGTH}
+        className="w-48 rounded border border-white/30 bg-white/90 px-3 py-2 text-center text-gray-900"
+      />
 
       <form onSubmit={handleJoin} className="flex flex-col items-center gap-3">
         <input
