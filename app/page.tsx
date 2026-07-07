@@ -1,65 +1,95 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
+import { ROOM_KEY_LENGTH } from "@/lib/constants";
+import { createRoom, getRoom } from "@/lib/rooms";
+
+export default function HomePage() {
+  const router = useRouter();
+  const [roomKeyInput, setRoomKeyInput] = useState("");
+  const [joining, setJoining] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleJoin(e: FormEvent) {
+    e.preventDefault();
+    const roomKey = roomKeyInput.trim().toUpperCase();
+    if (roomKey.length !== ROOM_KEY_LENGTH) {
+      setError(`ルームキーは${ROOM_KEY_LENGTH}桁で入力してください`);
+      return;
+    }
+    setJoining(true);
+    setError(null);
+    try {
+      const room = await getRoom(roomKey);
+      if (!room) {
+        setError("ルームが見つかりません");
+        return;
+      }
+      router.push(`/${roomKey}`);
+    } catch {
+      setError("エラーが発生しました。もう一度お試しください。");
+    } finally {
+      setJoining(false);
+    }
+  }
+
+  async function handleCreate() {
+    setCreating(true);
+    setError(null);
+    try {
+      const roomKey = await createRoom();
+      router.push(`/${roomKey}/admin`);
+    } catch {
+      setError("ルーム作成に失敗しました。もう一度お試しください。");
+    } finally {
+      setCreating(false);
+    }
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <main className="flex flex-1 flex-col items-center justify-center gap-8 px-4 text-white">
+      <h1 className="text-2xl font-bold">七夕オンライン短冊</h1>
+
+      <form onSubmit={handleJoin} className="flex flex-col items-center gap-3">
+        <input
+          type="text"
+          value={roomKeyInput}
+          onChange={(e) =>
+            setRoomKeyInput(
+              e.target.value.toUpperCase().slice(0, ROOM_KEY_LENGTH),
+            )
+          }
+          placeholder="ルームキー(6桁)"
+          maxLength={ROOM_KEY_LENGTH}
+          className="w-48 rounded border border-white/30 bg-white/90 px-3 py-2 text-center text-lg tracking-widest text-gray-900 uppercase"
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+        <button
+          type="submit"
+          disabled={joining}
+          className="w-48 rounded bg-yellow-400 px-4 py-2 font-bold text-gray-900 disabled:opacity-50"
+        >
+          {joining ? "確認中…" : "参加する"}
+        </button>
+      </form>
+
+      <div className="flex items-center gap-3 text-white/50">
+        <span className="h-px w-16 bg-white/30" />
+        <span className="text-xs">または</span>
+        <span className="h-px w-16 bg-white/30" />
+      </div>
+
+      <button
+        type="button"
+        onClick={handleCreate}
+        disabled={creating}
+        className="w-48 rounded border border-white/50 px-4 py-2 font-bold text-white disabled:opacity-50"
+      >
+        {creating ? "作成中…" : "ルームを作成する"}
+      </button>
+
+      {error && <p className="text-sm text-red-300">{error}</p>}
+    </main>
   );
 }

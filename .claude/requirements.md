@@ -242,6 +242,7 @@ function useRoomTanzaku(roomId: string, isAdmin: boolean): {
 - `deleteRoomCascade` は `writeBatch` 1回(上限500件)で完結する前提(想定最大200短冊+ルームドキュメント1件=201件のため)。それ以上の規模のルームは非対応(スコープ外、想定30人には十分)
 - 願い事の内容に対する自動検閲(NGワードフィルタ等)は行わない。管理者が目視で気づいた短冊を手動削除する運用とする
 - `TanzakuCard` の背景画像は `background-image: url(...)` + `background-size: cover` で指定し、カード自体は `aspect-ratio: 210 / 574` で固定する(画像と完全に同じ比率なのでcoverでも欠けない)。`next/image`の`fill`は必須ではないが、使う場合はコンテナの位置指定(`position: relative`)を忘れない
+- `subscribeTanzaku` は Firestore側で `where('authorClientId','==',...).orderBy('createdAt')` のような**フィールドが異なるwhere+orderByの組み合わせ**を使わない(複合インデックスの作成が必要になり、実行時に「index を作ってください」エラーで詰まりやすいため)。絞り込みは `where` のみをFirestoreに投げ、並び替え(`createdAt`昇順)は取得後にクライアント側の配列ソートで行う
 
 ## 環境変数
 ```

@@ -1,0 +1,15 @@
+rules_version = '2';
+
+// このアプリは認証機能を持たないため、意図的にread/writeを全面許可している。
+// (.claude/requirements.md の「Firestoreセキュリティルール」参照)
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /rooms/{roomId} {
+      allow read, write: if true;
+
+      match /tanzaku/{tanzakuId} {
+        allow read, write: if true;
+      }
+    }
+  }
+}
