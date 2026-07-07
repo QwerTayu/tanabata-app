@@ -21,7 +21,7 @@ export function TanzakuCard({
   onDelete,
 }: TanzakuCardProps) {
   const colorInfo = TANZAKU_COLORS[tanzaku.color];
-  const displayHandle = tanzaku.handle.trim() || "名無しさん";
+  const displayHandle = tanzaku.handle.trim() || "ななしさん";
 
   const cardStyle: CSSProperties = {
     aspectRatio: CARD_ASPECT_RATIO,

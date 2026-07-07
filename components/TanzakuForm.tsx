@@ -3,16 +3,15 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
   getRandomTanzakuColor,
-  HANDLE_MAX_LENGTH,
   MAX_TANZAKU_PER_ROOM_PER_USER,
   TANZAKU_COLORS,
   WISH_MAX_LENGTH,
 } from "@/lib/constants";
 import {
   getCreatedCount,
-  getHandle,
+  getShowHandle,
   incrementCreatedCount,
-  setHandle as saveHandle,
+  setShowHandle as saveShowHandle,
 } from "@/lib/localStorage";
 import { createTanzaku } from "@/lib/tanzaku";
 import type { TanzakuColor } from "@/lib/types";
@@ -20,11 +19,12 @@ import type { TanzakuColor } from "@/lib/types";
 interface TanzakuFormProps {
   roomId: string;
   clientId: string;
+  handle: string;
 }
 
-export function TanzakuForm({ roomId, clientId }: TanzakuFormProps) {
+export function TanzakuForm({ roomId, clientId, handle }: TanzakuFormProps) {
   const [wish, setWish] = useState("");
-  const [handle, setHandleValue] = useState("");
+  const [showHandle, setShowHandleValue] = useState(true);
   // SSR時とクライアントの初回描画でランダム値が食い違うと不一致を起こすため、
   // 初期値は固定にしておき、マウント後のeffectでランダムな色に差し替える
   const [color, setColor] = useState<TanzakuColor>("red");
@@ -35,13 +35,18 @@ export function TanzakuForm({ roomId, clientId }: TanzakuFormProps) {
   useEffect(() => {
     // ブラウザのlocalStorageから読むだけの初期化なので、マウント/roomId変更後1回だけ実行する
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setHandleValue(getHandle());
+    setShowHandleValue(getShowHandle());
     setColor(getRandomTanzakuColor());
     setCreatedCount(getCreatedCount(roomId));
   }, [roomId]);
 
   const remaining = MAX_TANZAKU_PER_ROOM_PER_USER - createdCount;
   const reachedLimit = remaining <= 0;
+
+  function handleToggleShowHandle(checked: boolean) {
+    setShowHandleValue(checked);
+    saveShowHandle(checked);
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -53,12 +58,11 @@ export function TanzakuForm({ roomId, clientId }: TanzakuFormProps) {
     try {
       await createTanzaku(roomId, {
         wish: trimmedWish.slice(0, WISH_MAX_LENGTH),
-        handle: handle.trim().slice(0, HANDLE_MAX_LENGTH),
+        handle: showHandle ? handle : "",
         color,
         authorClientId: clientId,
       });
       incrementCreatedCount(roomId);
-      saveHandle(handle.trim());
       setCreatedCount((c) => c + 1);
       setWish("");
       setColor(getRandomTanzakuColor());
@@ -82,15 +86,14 @@ export function TanzakuForm({ roomId, clientId }: TanzakuFormProps) {
       onSubmit={handleSubmit}
       className="flex w-full flex-wrap items-center gap-2 border-t border-white/20 bg-black/30 px-3 py-3"
     >
-      <input
-        type="text"
-        value={handle}
-        onChange={(e) =>
-          setHandleValue(e.target.value.slice(0, HANDLE_MAX_LENGTH))
-        }
-        placeholder="ハンドルネーム(空欄可)"
-        className="w-32 rounded border border-white/30 bg-white/90 px-2 py-1 text-sm text-gray-900"
-      />
+      <label className="flex items-center gap-1 text-xs text-white">
+        <input
+          type="checkbox"
+          checked={!showHandle}
+          onChange={(e) => handleToggleShowHandle(!e.target.checked)}
+        />
+        匿名で投稿
+      </label>
 
       <div className="flex gap-1">
         {(Object.keys(TANZAKU_COLORS) as TanzakuColor[]).map((key) => (
