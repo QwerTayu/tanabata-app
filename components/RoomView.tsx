@@ -139,7 +139,7 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
       <div className="mx-3 mb-2 rounded-2xl border-2 border-[#6b4423] bg-[#a9764f]/90 px-4 py-2 text-xs text-white shadow-md">
         <ul className="space-y-0.5">
           <li>・50文字以内で願い事を書いてね</li>
-          <li>・他の人の短冊にいいねを送れるよ(1つの短冊につき10回まで)</li>
+          <li>・他の人の短冊にいいねを送れるよ(1つの短冊につき3回まで)</li>
           <li>・他の人が嫌な気持ちになる願い事は書かないでね</li>
         </ul>
       </div>

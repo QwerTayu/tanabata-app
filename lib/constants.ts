@@ -4,7 +4,7 @@ export const WISH_MAX_LENGTH = 50;
 // カード幅(約100〜120px)で折り返さず1行表示するための上限
 export const HANDLE_MAX_LENGTH = 8;
 export const MAX_TANZAKU_PER_ROOM_PER_USER = 5;
-export const MAX_LIKES_PER_TANZAKU_PER_USER = 10;
+export const MAX_LIKES_PER_TANZAKU_PER_USER = 3;
 export const ROOM_KEY_LENGTH = 6;
 // 0/O, 1/I/L など紛らわしい文字を除外した文字セット
 export const ROOM_KEY_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";

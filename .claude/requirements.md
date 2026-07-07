@@ -37,10 +37,10 @@
   - 公開後は他人の短冊も含め全件閲覧可能になる
 - 短冊カードには「願い事」「ハンドルネーム」「♡アイコン + いいね数」を常設表示(拡大プレビューは無し)
 - ♡アイコンをクリックするとその場でいいねが+1される
-  - 同一ブラウザ・同一短冊につき最大10回まで(localStorageでカウント、10回に達したらアイコンを無効化)。性善説ベースのソフト制限でよい
+  - 同一ブラウザ・同一短冊につき最大3回まで(localStorageでカウント、3回に達したらアイコンを無効化)。性善説ベースのソフト制限でよい
 - いいね数が多いほど短冊カードが光る演出(box-shadow等によるglow。段階的に強くする)
 - 参加者は短冊を削除できない(削除ボタン自体が表示されない)
-- 画面上部などに簡単なルール表示(例: 「50文字以内で書いてね」「他の人の短冊に10回までいいねできるよ」「他の人が嫌な気持ちになる願い事は書かないでね」)
+- 画面上部などに簡単なルール表示(例: 「50文字以内で書いてね」「他の人の短冊に3回までいいねできるよ」「他の人が嫌な気持ちになる願い事は書かないでね」)
 
 ### 管理者(`/{roomId}/admin`)のみの追加機能
 - 「みんなに公開する」トグルボタン: `rooms/{roomId}.revealed` を `true`/`false` に切り替える(再度非公開に戻すことも可能)
@@ -82,7 +82,7 @@ match /databases/{database}/documents {
 - それでも当日の総アクセス量が読めない場合は、公開のタイミングを会の終盤に寄せる・いいねの多さより「見る楽しさ」を優先する等の運用上の工夫で吸収する想定
 
 ## いいね/glow演出の仕様
-- `getGlowStyle(likeCount: number): React.CSSProperties` という関数に閉じ込める。likeCountは1ブラウザにつき上限10だが、複数人からのいいねが積み重なるため合計値は10を大きく超えうる(最大30人×10=300が理論上限)。閾値は以下を初期値とし、当日の見た目調整で変更可能:
+- `getGlowStyle(likeCount: number): React.CSSProperties` という関数に閉じ込める。likeCountは1ブラウザにつき上限3だが、複数人からのいいねが積み重なるため合計値は3を大きく超えうる(最大30人×3=90が理論上限)。閾値は以下を初期値とし、当日の見た目調整で変更可能:
 
 | likeCount | 見た目 |
 |---|---|
@@ -170,7 +170,7 @@ export const WISH_MAX_LENGTH = 50;
 // カード幅(約100〜120px)で折り返さず1行表示するための上限
 export const HANDLE_MAX_LENGTH = 8;
 export const MAX_TANZAKU_PER_ROOM_PER_USER = 5;
-export const MAX_LIKES_PER_TANZAKU_PER_USER = 10;
+export const MAX_LIKES_PER_TANZAKU_PER_USER = 3;
 export const ROOM_KEY_LENGTH = 6;
 // 0/O, 1/I/L など紛らわしい文字を除外した文字セット
 export const ROOM_KEY_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
