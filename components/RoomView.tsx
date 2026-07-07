@@ -85,7 +85,9 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
   return (
     <main className="flex flex-1 flex-col text-white">
       <header className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
-        <span className="font-bold">ルーム: {roomId}</span>
+        <span className="font-bold">
+          ルーム: <span className="room-key">{roomId}</span>
+        </span>
         {isAdmin && (
           <span className="rounded bg-white/20 px-2 py-0.5">管理者</span>
         )}

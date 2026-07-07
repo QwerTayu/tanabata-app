@@ -63,7 +63,7 @@ export default function HomePage() {
           }
           placeholder="ルームキー(6桁)"
           maxLength={ROOM_KEY_LENGTH}
-          className="w-48 rounded border border-white/30 bg-white/90 px-3 py-2 text-center text-lg tracking-widest text-gray-900 uppercase"
+          className="room-key w-48 rounded border border-white/30 bg-white/90 px-3 py-2 text-center text-lg text-gray-900 uppercase"
         />
         <button
           type="submit"

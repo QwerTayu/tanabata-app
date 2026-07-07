@@ -18,13 +18,21 @@ body {
   background-attachment: fixed;
   background-repeat: no-repeat;
   color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN",
-    "Hiragino Sans", Meiryo, Arial, Helvetica, sans-serif;
+  font-family: "Yuji Boku", -apple-system, BlinkMacSystemFont,
+    "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, Arial, Helvetica,
+    sans-serif;
 }
 
 .writing-vertical {
   writing-mode: vertical-rl;
   text-orientation: mixed;
+}
+
+/* ルームキー表示専用: 装飾フォントだと読み違えやすいため等幅フォントで可読性を優先 */
+.room-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
+  letter-spacing: 0.05em;
 }
 
 @keyframes tanzaku-pulse {
