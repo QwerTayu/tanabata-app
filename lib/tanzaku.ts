@@ -50,6 +50,8 @@ export function subscribeTanzaku(
       id: d.id,
       ...(d.data() as TanzakuDoc),
     }));
+    // 表示順(作成順/いいね順の切り替え)はUI側(RoomView)の責務なので、
+    // ここでは購読のたびに順序が安定するよう投稿順のみで揃えておく。
     list.sort(
       (a, b) => (a.createdAt?.toMillis() ?? 0) - (b.createdAt?.toMillis() ?? 0),
     );
