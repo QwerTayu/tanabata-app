@@ -134,6 +134,7 @@ match /databases/{database}/documents {
 - 参加者画面・管理者画面は `TanzakuGrid` / `TanzakuCard` / `TanzakuForm` を共通利用し、`isAdmin` propで削除ボタン・ルーム削除・共有ボタン・公開トグルの表示有無のみ出し分ける
 - `TanzakuForm` はハンドルネームの自由入力欄を持たず、`RoomView`から確定済みの`handle`をpropで受け取る。表示する代わりに「名前を表示する/しない」トグルを持つ
 - `components/ShareModal.tsx` : 「共有する」ボタンで開くモーダル。ルームキー(大表示)・QRコード(`qrcode.react`)・共有URL・コピー ボタンを表示する
+- `lib/sortTanzaku.ts` : `sortTanzaku(list, mode)`。`mode`は`"likeCount" | "createdAt"`で、`RoomView`が並び順トグルの状態に応じて呼び出す
 - `TanzakuGrid` は横スクロールコンテナ(`overflow-x: auto`)の中に `TanzakuCard` を1行(`flex`)で並べるだけのシンプルな実装でよい(折り返し・座標計算は不要)。各`TanzakuCard`に`content-visibility: auto`を指定し、画面外カードの描画コストを抑える
 - `lib/firebase/client.ts` : Firebase Client SDK初期化(`NEXT_PUBLIC_FIREBASE_*` 環境変数)
 - `useRoomTanzaku(roomId, isAdmin)` フック:
@@ -249,12 +250,12 @@ function useRoomTanzaku(roomId: string, isAdmin: boolean): {
 - 「願い事」の入力欄は単一行の `<input type="text">`(`textarea`ではない)。改行は考慮不要で、縦書き表示時の折り返しはCSSの`writing-mode: vertical-rl`が自動で処理する
 - 投稿フォームはFirestoreへの書き込みが完了するまで送信ボタンを`disabled`にし、二重送信(連打による重複作成)を防ぐ
 - `createdCount`(投稿数)・`likes`(いいね数)のlocalStorageカウントは、**Firestoreへの書き込みが成功した後にのみ**インクリメントする(失敗時に枠を消費しない)
-- 短冊一覧は `orderBy('createdAt', 'asc')`(古い順)で表示し、新規投稿は末尾に追加される(既存カードの並びがガタつかない)
+- 短冊一覧の並び順は「いいね順」(デフォルト。いいね数が多い順、同数は投稿が古い順のタイブレーク)と「新着順」(投稿が古い順)を**管理者・参加者どちらの画面からもトグルで切り替え可能**。切り替えは既に取得済みのデータをクライアント側で並べ替えるだけなのでFirestoreへの再アクセスは発生しない。いいね順選択中はいいねが増減するとその短冊の表示位置がリアルタイムに変わる(横スクロール中に並びが動く点は仕様として許容する)。並び順の選択自体はページを離れると保持されない(localStorageには保存しない)
 - 個別短冊の削除(管理者)は確認ダイアログなしで即時実行してよい。ルーム全体の削除のみ確認ダイアログを挟む(取り返しがつかないため)
 - `deleteRoomCascade` は `writeBatch` 1回(上限500件)で完結する前提(想定最大200短冊+ルームドキュメント1件=201件のため)。それ以上の規模のルームは非対応(スコープ外、想定30人には十分)
 - 願い事の内容に対する自動検閲(NGワードフィルタ等)は行わない。管理者が目視で気づいた短冊を手動削除する運用とする
 - `TanzakuCard` の背景画像は `background-image: url(...)` + `background-size: cover` で指定し、カード自体は `aspect-ratio: 210 / 574` で固定する(画像と完全に同じ比率なのでcoverでも欠けない)。`next/image`の`fill`は必須ではないが、使う場合はコンテナの位置指定(`position: relative`)を忘れない
-- `subscribeTanzaku` は Firestore側で `where('authorClientId','==',...).orderBy('createdAt')` のような**フィールドが異なるwhere+orderByの組み合わせ**を使わない(複合インデックスの作成が必要になり、実行時に「index を作ってください」エラーで詰まりやすいため)。絞り込みは `where` のみをFirestoreに投げ、並び替え(`createdAt`昇順)は取得後にクライアント側の配列ソートで行う
+- `subscribeTanzaku` は Firestore側で `where('authorClientId','==',...).orderBy(...)` のような**フィールドが異なるwhere+orderByの組み合わせ**を使わない(複合インデックスの作成が必要になり、実行時に「index を作ってください」エラーで詰まりやすいため)。絞り込みは `where` のみをFirestoreに投げ、購読直後の基準順は`createdAt`昇順で安定させる。表示上の「いいね順/新着順」トグルは`lib/sortTanzaku.ts`の`sortTanzaku(list, mode)`が担当し、`RoomView`が`useMemo`で並べ替えてから`TanzakuGrid`に渡す(Firestoreの再購読は発生しない)
 - `RoomView`での`handle`の状態は `null`(localStorage未読込)/ `""`(読込済みだが未設定=入室ゲートを出す)/ それ以外(設定済み)の3値で判定する。`clientId`のような「空文字=未読込」の2値判定を流用すると、「読込中」と「本当に未設定」を区別できず入室ゲートが誤って一瞬表示される(または表示されない)ので注意
 
 ## 環境変数

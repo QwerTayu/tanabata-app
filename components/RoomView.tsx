@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRoomTanzaku } from "@/hooks/useRoomTanzaku";
 import { HANDLE_MAX_LENGTH } from "@/lib/constants";
 import {
@@ -11,6 +11,7 @@ import {
   setHandle as saveHandle,
 } from "@/lib/localStorage";
 import { deleteRoomCascade, setRevealed } from "@/lib/rooms";
+import { sortTanzaku, type SortMode } from "@/lib/sortTanzaku";
 import { deleteTanzaku } from "@/lib/tanzaku";
 import { ShareModal } from "./ShareModal";
 import { TanzakuForm } from "./TanzakuForm";
@@ -35,6 +36,12 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
   const [toggling, setToggling] = useState(false);
   const [deletingRoom, setDeletingRoom] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>("likeCount");
+
+  const sortedTanzakuList = useMemo(
+    () => sortTanzaku(tanzakuList, sortMode),
+    [tanzakuList, sortMode],
+  );
 
   useEffect(() => {
     // ブラウザのlocalStorageから読むだけの初期化なので、マウント後1回だけ実行する
@@ -172,10 +179,36 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
         </p>
       )}
 
+      <div className="flex items-center gap-2 px-3 pt-2 text-xs">
+        <span className="text-white/60">並び順:</span>
+        <button
+          type="button"
+          onClick={() => setSortMode("likeCount")}
+          className={`rounded px-2 py-1 ${
+            sortMode === "likeCount"
+              ? "bg-yellow-400 font-bold text-gray-900"
+              : "bg-white/20 text-white"
+          }`}
+        >
+          いいね順
+        </button>
+        <button
+          type="button"
+          onClick={() => setSortMode("createdAt")}
+          className={`rounded px-2 py-1 ${
+            sortMode === "createdAt"
+              ? "bg-yellow-400 font-bold text-gray-900"
+              : "bg-white/20 text-white"
+          }`}
+        >
+          新着順
+        </button>
+      </div>
+
       <div className="flex flex-1 flex-col items-start overflow-hidden pt-2">
         <TanzakuGrid
           roomId={roomId}
-          tanzakuList={tanzakuList}
+          tanzakuList={sortedTanzakuList}
           isAdmin={isAdmin}
           onDelete={isAdmin ? handleDeleteTanzaku : undefined}
         />
