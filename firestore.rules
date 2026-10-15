@@ -19,6 +19,13 @@ service cloud.firestore {
       return getAfter(path).data.tanzakuCount == before + 1;
     }
 
+    // 短冊IDが `{uid}__{書き込み後の投稿カウンタ値}` になっているか。
+    // 1回のバッチでカウンタを+1しつつ短冊を複数作る迂回を防ぐため、カウンタ1つにつき作れる短冊を1件に固定する
+    function tanzakuIdMatchesCounter(roomId, tanzakuId) {
+      let path = /databases/$(database)/documents/rooms/$(roomId)/authorCounters/$(request.auth.uid);
+      return tanzakuId == request.auth.uid + '__' + string(getAfter(path).data.tanzakuCount);
+    }
+
     // 同じトランザクション内で、自分のいいね回数ドキュメントがちょうど+1されているか
     function likedByIncremented(roomId, tanzakuId) {
       let path = /databases/$(database)/documents/rooms/$(roomId)/tanzaku/$(tanzakuId)/likedBy/$(request.auth.uid);
@@ -52,7 +59,8 @@ service cloud.firestore {
           && request.resource.data.color in ['red', 'yellow', 'blue']
           && request.resource.data.likeCount == 0
           && request.resource.data.createdAt == request.time
-          && authorCounterIncremented(roomId);
+          && authorCounterIncremented(roomId)
+          && tanzakuIdMatchesCounter(roomId, tanzakuId);
         allow update: if request.auth != null
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
           && request.resource.data.likeCount == resource.data.likeCount + 1

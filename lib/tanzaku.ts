@@ -28,7 +28,8 @@ export class LimitReachedError extends Error {
 }
 
 // 投稿カウンタ(authorCounters/{uid})の+1と短冊の作成を1つのトランザクションで行う。
-// Firestoreルール側も「同じ書き込みでカウンタが+1されていること」を検証している。
+// Firestoreルール側も「同じ書き込みでカウンタが+1されていること」と、
+// 短冊IDが`{uid}__{+1後のカウンタ値}`であることを検証している(カウンタ1つにつき短冊1件)。
 export async function createTanzaku(
   roomId: string,
   input: {
@@ -40,9 +41,8 @@ export async function createTanzaku(
 ): Promise<string> {
   const roomRef = doc(db, "rooms", roomId);
   const counterRef = doc(db, "rooms", roomId, "authorCounters", input.authorUid);
-  const tanzakuRef = doc(collection(db, "rooms", roomId, "tanzaku"));
 
-  await runTransaction(db, async (tx) => {
+  return runTransaction(db, async (tx) => {
     const roomSnap = await tx.get(roomRef);
     const counterSnap = await tx.get(counterRef);
     if (!roomSnap.exists()) throw new Error("ルームが見つかりません");
@@ -55,8 +55,9 @@ export async function createTanzaku(
       throw new LimitReachedError(`このルームでの投稿上限(${max}個)に達しました`);
     }
 
+    const tanzakuId = `${input.authorUid}__${count + 1}`;
     tx.set(counterRef, { tanzakuCount: count + 1 });
-    tx.set(tanzakuRef, {
+    tx.set(doc(db, "rooms", roomId, "tanzaku", tanzakuId), {
       wish: input.wish,
       handle: input.handle,
       color: input.color,
@@ -64,8 +65,8 @@ export async function createTanzaku(
       likeCount: 0,
       createdAt: serverTimestamp(),
     });
+    return tanzakuId;
   });
-  return tanzakuRef.id;
 }
 
 // Firestoreの`where(authorUid==...).orderBy(createdAt)`は複合インデックスが

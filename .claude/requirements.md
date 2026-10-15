@@ -56,7 +56,7 @@
 
 ## データモデル(Firestore)
 - `rooms/{roomId}` : `{ createdAt: Timestamp, revealed: boolean, maxTanzakuPerUser: number, maxLikesPerTanzaku: number }` (`roomId` = 6桁のルームキーそのもの。`revealed`は作成時`false`。上限値2つは作成時に定数の初期値を書き込み、以後は管理者が編集できる)
-- `rooms/{roomId}/tanzaku/{tanzakuId}` :
+- `rooms/{roomId}/tanzaku/{tanzakuId}` : `tanzakuId`は自動IDではなく`{authorUid}__{連番}`(連番 = 作成時に+1した後の`authorCounters/{uid}.tanzakuCount`)
   - `wish: string`(1〜50文字)
   - `handle: string`(0〜8文字、空文字許容。投稿時に「名前を表示しない」を選んだ場合は空文字で保存する)
   - `color: 'red' | 'yellow' | 'blue'`(投稿時にユーザーが選択。カード背景画像 `card_{color}.png` の出し分けに使用)
@@ -69,13 +69,15 @@
 ## Firestoreセキュリティルール
 全文は `firestore.rules`。要点は以下。
 - `rooms/{roomId}`: readは全許可。createは`revealed == false`かつ上限値2つが正の整数であること。updateは`revealed`/`maxTanzakuPerUser`/`maxLikesPerTanzaku`のみ変更可(管理者判定はしないので誰でも可)。deleteは全許可
-- `tanzaku/{tanzakuId}`: readは全許可。createは`authorUid == request.auth.uid`、各フィールドのバリデーション(願い事1〜50文字・ハンドル8文字以内・色・`likeCount == 0`)に加え、**同じ書き込みで自分の`authorCounters/{uid}`がちょうど+1されていること**(`getAfter()`で検証)。updateは`likeCount`の+1のみで、**同じ書き込みで自分の`likedBy/{uid}`がちょうど+1されていること**。deleteは全許可
+- `tanzaku/{tanzakuId}`: readは全許可。createは`authorUid == request.auth.uid`、各フィールドのバリデーション(願い事1〜50文字・ハンドル8文字以内・色・`likeCount == 0`)に加え、**同じ書き込みで自分の`authorCounters/{uid}`がちょうど+1されていること**(`getAfter()`で検証)、**ドキュメントIDが`{uid}__{+1後のカウンタ値}`であること**。updateは`likeCount`の+1のみで、**同じ書き込みで自分の`likedBy/{uid}`がちょうど+1されていること**。deleteは全許可
 - `likedBy/{uid}` / `authorCounters/{uid}`: 本人のuidのみ読み書き可。createは1のみ、updateは直前の値+1のみで、ルームの上限値以下であること。deleteは不可
 - 文字数などのバリデーションはクライアント側(フォーム送信前)でも行う
 
 ルールの`get()`は書き込み前の状態を読むため、初回投稿(カウンタがまだ無い)で評価が失敗する。そこでカウンタ・`likedBy`の「同じ書き込みで+1されたこと」は`getAfter()`で検証する。
 
-**既知の限界**: Firestore SDKを直接叩けば、1回のバッチ書き込みでカウンタを1だけ増やし、短冊を複数作ることはできてしまう(1回のバッチで書けるのは最大500件、その回数はカウンタの上限までに制限される)。開発者ツールでlocalStorageを書き換える程度の突破は防げるので、これは許容する。いいねは1回の書き込みで同じ短冊を1度しか更新できないので、この迂回はできない。
+「カウンタが+1されたこと」だけを見ると、1回のバッチでカウンタを1だけ増やしつつ短冊を複数作れてしまう(どの短冊のルールから見てもカウンタは+1されているため)。そこで短冊のドキュメントIDを`{uid}__{+1後のカウンタ値}`に固定し、カウンタ1つにつき作れる短冊を1件に絞る。カウンタは減らない(deleteも不可)ので、管理者が削除した短冊と同じIDで作り直すこともできない。いいねは1回の書き込みで同じ短冊を1度しか更新できないので、この迂回はもともとできない。
+
+ルールのテストは `tests/firestore.rules.test.mjs`(`@firebase/rules-unit-testing` + `node:test`)。`npm run test:rules` でFirestoreエミュレータを起動して実行する(Javaが必要)。本番へのルール反映は `npm run deploy:rules`(`firebase-tools`、デプロイ先は`.firebaserc`の`tanabata-app-ab447`。事前に`npx firebase login`が必要)。
 
 「非公開時は自分の短冊しか見えない」はクライアントのクエリ条件(`where('authorUid','==',uid)`)による制御であり、ルール上は誰でも全件readできる点に注意(ブラウザの開発者ツール等で直接Firestoreを叩けば非公開中でも他人の短冊を読めてしまう。1日限りのアイスブレイク用途として許容する)。
 
@@ -238,7 +240,7 @@ function describeSignInError(e: unknown): AuthSignInError; // Firebaseのエラ�
 
 // lib/tanzaku.ts
 class LimitReachedError extends Error {} // 投稿上限・いいね上限に達したときにcreateTanzaku/likeTanzakuが投げる
-async function createTanzaku(roomId: string, input: { wish: string; handle: string; color: TanzakuColor; authorUid: string }): Promise<string>; // runTransactionでauthorCountersの+1と短冊作成を同時に行う。新規ドキュメントIDを返す
+async function createTanzaku(roomId: string, input: { wish: string; handle: string; color: TanzakuColor; authorUid: string }): Promise<string>; // runTransactionでauthorCountersの+1と短冊作成を同時に行う。短冊IDは`{authorUid}__{+1後のカウンタ値}`で、そのIDを返す
 function subscribeTanzaku(roomId: string, opts: { authorUid?: string }, cb: (list: Tanzaku[]) => void): () => void; // authorUid指定時はwhereで絞り込み、未指定なら全件
 async function likeTanzaku(roomId: string, tanzakuId: string, uid: string): Promise<number>; // runTransactionでlikedByの+1とlikeCountのincrement(1)を同時に行う。このuidの通算いいね回数を返す
 async function deleteTanzaku(roomId: string, tanzakuId: string): Promise<void>;
@@ -297,7 +299,6 @@ NEXT_PUBLIC_FIREBASE_APP_ID
 - 管理者操作のサーバー側強制(URL判定のみで許容する)
 - 短冊の編集(削除のみ、内容修正は不可)
 - 拡大プレビュー(モーダル)
-- 投稿上限の完全な不正防止(Firestore SDKを直接叩くバッチ書き込みでの迂回は許容。上記「既知の限界」参照)
 - 1人が複数の匿名uidを使い分けること(シークレットウィンドウ等で別uidになる)の防止
 - モバイル最適化以上のレスポンシブ細部調整、多言語対応
 
