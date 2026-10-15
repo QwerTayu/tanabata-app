@@ -138,6 +138,7 @@
 - `TanzakuForm` はハンドルネームの自由入力欄を持たず、`RoomView`から確定済みの`handle`をpropで受け取る。表示する代わりに「名前を表示する/しない」トグルを持つ
 - `TanzakuForm` の「残りN枚」は、取得済みの`tanzakuList`を`authorUid === uid`で数えて算出する(追加のreadを増やさない)。管理者が削除した短冊はここから消えるがサーバーのカウンタは減らないため、表示上は残りがあっても投稿が拒否されることがある。そのときは`LimitReachedError`を受けてフォームを上限到達表示に切り替える
 - `TanzakuGrid` のいいね可否は、セッション内のReact state(`{ [tanzakuId]: 回数 }`)で持つ。`likedBy`を1枚ずつ購読するとreadが嵩むため。リロードで消えるが、再読み込み後に上限を超えて押した場合はトランザクションが`LimitReachedError`を投げるので、それを受けてボタンを無効化する
+- `components/AuthErrorDialog.tsx` : 匿名サインインに失敗したときに出すダイアログ。原因の説明(匿名プロバイダが無効/同一IPからのサインイン上限(1時間100件)/ネットワーク/APIキーの制限/その他)とFirebaseのエラーコード、「再試行する」ボタンを表示する。`uid`が無いと閲覧も投稿もできないので閉じるボタンは置かない
 - `components/RoomLimitsForm.tsx` : 管理者用の上限値編集フォーム。`key`に現在の上限値を渡し、他の管理者が更新したら入力欄を最新値で作り直す
 - `components/ShareModal.tsx` : 「共有する」ボタンで開くモーダル。ルームキー(大表示)・QRコード(`qrcode.react`)・共有URL・コピー ボタンを表示する
 - `lib/sortTanzaku.ts` : `sortTanzaku(list, mode)`。`mode`は`"likeCount" | "createdAt"`で、`RoomView`が並び順トグルの状態に応じて呼び出す
@@ -231,7 +232,9 @@ async function updateRoomLimits(roomId: string, limits: { maxTanzakuPerUser?: nu
 async function deleteRoomCascade(roomId: string): Promise<void>; // tanzakuサブコレクション全件+roomドキュメントをwriteBatchで削除(likedBy/authorCountersはルールで削除不可のため残る)
 
 // lib/auth.ts
-function subscribeAuthUid(cb: (uid: string | null) => void): () => void; // onAuthStateChangedを購読し、未サインインならsignInAnonymouslyする
+function subscribeAuthUid(cb: (uid: string | null) => void, onError: (error: AuthSignInError) => void): () => void; // onAuthStateChangedを購読し、未サインインならsignInAnonymouslyする。失敗したらonErrorに原因を渡す
+async function signInAnonymouslyOrThrow(): Promise<void>; // 再試行ボタンから呼ぶ。失敗時はAuthSignInErrorを投げる
+function describeSignInError(e: unknown): AuthSignInError; // Firebaseのエラーコードを { title, detail, code } に変換する
 
 // lib/tanzaku.ts
 class LimitReachedError extends Error {} // 投稿上限・いいね上限に達したときにcreateTanzaku/likeTanzakuが投げる

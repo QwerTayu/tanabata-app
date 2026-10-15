@@ -4,12 +4,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRoomTanzaku } from "@/hooks/useRoomTanzaku";
-import { subscribeAuthUid } from "@/lib/auth";
+import {
+  signInAnonymouslyOrThrow,
+  subscribeAuthUid,
+  type AuthSignInError,
+} from "@/lib/auth";
 import { HANDLE_MAX_LENGTH } from "@/lib/constants";
 import { getHandle, setHandle as saveHandle } from "@/lib/localStorage";
 import { deleteRoomCascade, setRevealed } from "@/lib/rooms";
 import { sortTanzaku, type SortMode } from "@/lib/sortTanzaku";
 import { deleteTanzaku } from "@/lib/tanzaku";
+import { AuthErrorDialog } from "./AuthErrorDialog";
 import { RoomLimitsForm } from "./RoomLimitsForm";
 import { ShareModal } from "./ShareModal";
 import { TanzakuForm } from "./TanzakuForm";
@@ -24,6 +29,8 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
   const router = useRouter();
   // null = 匿名サインイン待ち
   const [uid, setUid] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<AuthSignInError | null>(null);
+  const [retryingAuth, setRetryingAuth] = useState(false);
   const { room, tanzakuList, revealed, loading, error } = useRoomTanzaku(
     roomId,
     isAdmin,
@@ -49,7 +56,19 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
     setHandleState(getHandle());
   }, []);
 
-  useEffect(() => subscribeAuthUid(setUid), []);
+  useEffect(() => subscribeAuthUid(setUid, setAuthError), []);
+
+  async function handleRetryAuth() {
+    setRetryingAuth(true);
+    try {
+      await signInAnonymouslyOrThrow();
+      setAuthError(null);
+    } catch (e) {
+      setAuthError(e as AuthSignInError);
+    } finally {
+      setRetryingAuth(false);
+    }
+  }
 
   if (error) {
     return (
@@ -66,6 +85,13 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
     return (
       <main className="flex flex-1 items-center justify-center text-white/70">
         読み込み中…
+        {authError && (
+          <AuthErrorDialog
+            error={authError}
+            retrying={retryingAuth}
+            onRetry={handleRetryAuth}
+          />
+        )}
       </main>
     );
   }
