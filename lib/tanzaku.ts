@@ -1,48 +1,83 @@
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
   increment,
   onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
-  updateDoc,
   where,
 } from "firebase/firestore";
 import { db } from "./firebase/client";
-import type { Tanzaku, TanzakuColor, TanzakuDoc } from "./types";
+import type {
+  AuthorCounterDoc,
+  LikedByDoc,
+  RoomDoc,
+  Tanzaku,
+  TanzakuColor,
+  TanzakuDoc,
+} from "./types";
 
+// ルームごとの投稿上限・いいね上限に達したときに投げる。UI側はこのエラーかどうかで表示を切り替える
+export class LimitReachedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LimitReachedError";
+  }
+}
+
+// 投稿カウンタ(authorCounters/{uid})の+1と短冊の作成を1つのトランザクションで行う。
+// Firestoreルール側も「同じ書き込みでカウンタが+1されていること」を検証している。
 export async function createTanzaku(
   roomId: string,
   input: {
     wish: string;
     handle: string;
     color: TanzakuColor;
-    authorClientId: string;
+    authorUid: string;
   },
 ): Promise<string> {
-  const ref = await addDoc(collection(db, "rooms", roomId, "tanzaku"), {
-    wish: input.wish,
-    handle: input.handle,
-    color: input.color,
-    authorClientId: input.authorClientId,
-    likeCount: 0,
-    createdAt: serverTimestamp(),
+  const roomRef = doc(db, "rooms", roomId);
+  const counterRef = doc(db, "rooms", roomId, "authorCounters", input.authorUid);
+  const tanzakuRef = doc(collection(db, "rooms", roomId, "tanzaku"));
+
+  await runTransaction(db, async (tx) => {
+    const roomSnap = await tx.get(roomRef);
+    const counterSnap = await tx.get(counterRef);
+    if (!roomSnap.exists()) throw new Error("ルームが見つかりません");
+
+    const max = (roomSnap.data() as RoomDoc).maxTanzakuPerUser;
+    const count = counterSnap.exists()
+      ? (counterSnap.data() as AuthorCounterDoc).tanzakuCount
+      : 0;
+    if (count >= max) {
+      throw new LimitReachedError(`このルームでの投稿上限(${max}個)に達しました`);
+    }
+
+    tx.set(counterRef, { tanzakuCount: count + 1 });
+    tx.set(tanzakuRef, {
+      wish: input.wish,
+      handle: input.handle,
+      color: input.color,
+      authorUid: input.authorUid,
+      likeCount: 0,
+      createdAt: serverTimestamp(),
+    });
   });
-  return ref.id;
+  return tanzakuRef.id;
 }
 
-// Firestoreの`where(authorClientId==...).orderBy(createdAt)`は複合インデックスが
+// Firestoreの`where(authorUid==...).orderBy(createdAt)`は複合インデックスが
 // 必要になり詰まりやすいため、orderByはFirestore側でかけずクライアント側でソートする。
 export function subscribeTanzaku(
   roomId: string,
-  opts: { authorClientId?: string },
+  opts: { authorUid?: string },
   cb: (list: Tanzaku[]) => void,
 ): () => void {
   const collectionRef = collection(db, "rooms", roomId, "tanzaku");
-  const q = opts.authorClientId
-    ? query(collectionRef, where("authorClientId", "==", opts.authorClientId))
+  const q = opts.authorUid
+    ? query(collectionRef, where("authorUid", "==", opts.authorUid))
     : query(collectionRef);
 
   return onSnapshot(q, (snap) => {
@@ -59,12 +94,33 @@ export function subscribeTanzaku(
   });
 }
 
+// いいね回数(likedBy/{uid})の+1と短冊のlikeCountの+1を1つのトランザクションで行う。
+// 戻り値はこのuidがこの短冊にいいねした通算回数(UIの上限表示に使う)。
 export async function likeTanzaku(
   roomId: string,
   tanzakuId: string,
-): Promise<void> {
-  await updateDoc(doc(db, "rooms", roomId, "tanzaku", tanzakuId), {
-    likeCount: increment(1),
+  uid: string,
+): Promise<number> {
+  const roomRef = doc(db, "rooms", roomId);
+  const tanzakuRef = doc(db, "rooms", roomId, "tanzaku", tanzakuId);
+  const likedByRef = doc(tanzakuRef, "likedBy", uid);
+
+  return runTransaction(db, async (tx) => {
+    const roomSnap = await tx.get(roomRef);
+    const likedBySnap = await tx.get(likedByRef);
+    if (!roomSnap.exists()) throw new Error("ルームが見つかりません");
+
+    const max = (roomSnap.data() as RoomDoc).maxLikesPerTanzaku;
+    const count = likedBySnap.exists()
+      ? (likedBySnap.data() as LikedByDoc).count
+      : 0;
+    if (count >= max) {
+      throw new LimitReachedError(`この短冊へのいいねは${max}回までです`);
+    }
+
+    tx.set(likedByRef, { count: count + 1 });
+    tx.update(tanzakuRef, { likeCount: increment(1) });
+    return count + 1;
   });
 }
 

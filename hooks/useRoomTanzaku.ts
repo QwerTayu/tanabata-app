@@ -1,16 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getClientId } from "@/lib/localStorage";
 import { subscribeRoom } from "@/lib/rooms";
 import { subscribeTanzaku } from "@/lib/tanzaku";
-import type { Tanzaku } from "@/lib/types";
+import type { RoomDoc, Tanzaku } from "@/lib/types";
 
-export function useRoomTanzaku(roomId: string, isAdmin: boolean) {
+// uidがnull(匿名サインイン待ち)の間は、自分の短冊だけの購読を始めない
+export function useRoomTanzaku(
+  roomId: string,
+  isAdmin: boolean,
+  uid: string | null,
+) {
+  const [room, setRoom] = useState<RoomDoc | null>(null);
   const [tanzakuList, setTanzakuList] = useState<Tanzaku[]>([]);
-  const [revealed, setRevealed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const revealed = room?.revealed ?? false;
+  const showAll = isAdmin || revealed;
+  // 全件購読中はuidの到着で再購読しないよう、絞り込みに使うときだけuidを依存に含める
+  const filterUid = showAll ? null : uid;
 
   useEffect(() => {
     const unsubscribe = subscribeRoom(roomId, (room) => {
@@ -19,28 +27,27 @@ export function useRoomTanzaku(roomId: string, isAdmin: boolean) {
         return;
       }
       setError(null);
-      setRevealed(room.revealed);
+      setRoom(room);
     });
     return unsubscribe;
   }, [roomId]);
 
   useEffect(() => {
     if (error) return;
-    const showAll = isAdmin || revealed;
-    const clientId = getClientId();
-    // revealed/isAdminの切り替え時に再購読するための明示的なローディング状態
+    if (!showAll && !filterUid) return;
+    // 全件/自分のみの切り替え時に再購読するための明示的なローディング状態
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     const unsubscribe = subscribeTanzaku(
       roomId,
-      showAll ? {} : { authorClientId: clientId },
+      filterUid ? { authorUid: filterUid } : {},
       (list) => {
         setTanzakuList(list);
         setLoading(false);
       },
     );
     return unsubscribe;
-  }, [roomId, isAdmin, revealed, error]);
+  }, [roomId, showAll, filterUid, error]);
 
-  return { tanzakuList, revealed, loading, error };
+  return { room, tanzakuList, revealed, loading, error };
 }

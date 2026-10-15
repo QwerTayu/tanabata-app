@@ -11,6 +11,8 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase/client";
 import {
+  DEFAULT_MAX_LIKES_PER_TANZAKU_PER_USER,
+  DEFAULT_MAX_TANZAKU_PER_ROOM_PER_USER,
   ROOM_KEY_CHARS,
   ROOM_KEY_CREATE_MAX_RETRIES,
   ROOM_KEY_LENGTH,
@@ -36,6 +38,8 @@ export async function createRoom(): Promise<string> {
     await setDoc(roomRef, {
       createdAt: serverTimestamp(),
       revealed: false,
+      maxTanzakuPerUser: DEFAULT_MAX_TANZAKU_PER_ROOM_PER_USER,
+      maxLikesPerTanzaku: DEFAULT_MAX_LIKES_PER_TANZAKU_PER_USER,
     });
     return roomKey;
   }
@@ -61,6 +65,13 @@ export async function setRevealed(
   revealed: boolean,
 ): Promise<void> {
   await updateDoc(doc(db, "rooms", roomId), { revealed });
+}
+
+export async function updateRoomLimits(
+  roomId: string,
+  limits: { maxTanzakuPerUser?: number; maxLikesPerTanzaku?: number },
+): Promise<void> {
+  await updateDoc(doc(db, "rooms", roomId), limits);
 }
 
 export async function deleteRoomCascade(roomId: string): Promise<void> {
