@@ -5,24 +5,26 @@
 参考: note記事(formrun+Canvaによる手作業の社内七夕企画) https://note.com/sales_wsff/n/n8ded5427462c
 画面デザイン参考: `doc/参加者画面イメージ.png`(短冊カードを1行に並べて横スクロールするスタイル)。実アセットとして `public/background.png`(ページ背景)・`public/card_r.png` / `card_y.png` / `card_b.png`(色ごとの短冊カード背景画像)を使用する
 実装リミットは当日6時間のため、認証なし・Firestoreルール全開放・無料枠運用のシンプル構成を優先する。
+その後、サークル外にも公開することになったため、投稿上限・いいね上限・投稿者IDをFirestoreルールで強制する形に変更した(v2。変更の経緯は `.claude/requirements_v2.md`)。ログイン画面は持たず、Firebase Anonymous Authenticationで各ブラウザに偽装できない`uid`を持たせる。
 
 ## 技術スタック
 - Next.js (App Router, TypeScript, Tailwind CSS)
 - Firebase Firestore (DB。Client SDKのみ使用。**無料枠(Sparkプラン)のまま運用**)
+- Firebase Authentication (匿名認証のみ。ログイン画面は無く、ページを開くと自動で匿名サインインする。Firebase Consoleで「匿名」プロバイダを有効にしておく)
 - Vercel (ホスティング)
-- ※firebase-admin SDK・API Route・トークン認証などは使用しない(意図的にシンプル化)
+- ※firebase-admin SDK・API Routeなどは使用しない(意図的にシンプル化)
 
 ## ユーザーフロー / ルーティング
 - `/` : ハンドルネーム入力欄(必須、参加・作成どちらにも共通) + ルームキー(英数字6桁)入力欄 + 「ルーム作成」ボタン
   - ハンドルネームが空のまま参加/作成しようとした場合はエラー表示して処理を中断する
   - キー入力→参加: ハンドルネーム確定後、入力値の `rooms/{roomId}` の存在確認を行い、`/{roomId}` へ遷移(存在しなければエラー表示)
-  - ルーム作成: ハンドルネーム確定後、クライアントでランダムな6桁roomKeyを生成し(紛らわしい文字 0/O, 1/I/L 等は除外)、`rooms/{roomKey}` を `revealed: false` で作成 → 作成者はそのまま `/{roomKey}/admin` へ遷移
+  - ルーム作成: ハンドルネーム確定後、クライアントでランダムな6桁roomKeyを生成し(紛らわしい文字 0/O, 1/I/L 等は除外)、`rooms/{roomKey}` を `revealed: false` と上限値の初期値で作成 → 作成者はそのまま `/{roomKey}/admin` へ遷移
   - 確定したハンドルネームはlocalStorageに保存する(次回訪問時に入力欄へプリフィルされる。空にはできないが、再入力して上書きすることは可能)
 - `/{roomId}` : 参加者画面(短冊カードグリッド閲覧・いいね・短冊投稿)
   - 共有リンク経由の直接アクセス等でlocalStorageにハンドルネームが無い場合、短冊の閲覧・投稿の前に「ニックネームを入力してください」という必須の入室ゲートを表示する(トップページを経由しない参加者向けの保険)
-  - `revealed` が `false` の間は、自分(`authorClientId`が一致するもの)が作成した短冊のみ表示。「他の人の短冊は管理者が公開するまでお待ちください」等のメッセージを表示
+  - `revealed` が `false` の間は、自分(`authorUid`が一致するもの)が作成した短冊のみ表示。「他の人の短冊は管理者が公開するまでお待ちください」等のメッセージを表示
   - `revealed` が `true` になった瞬間、自動的に全員分の短冊表示に切り替わる(リアルタイム反映)
-- `/{roomId}/admin` : 管理者画面(参加者画面の全機能 + 短冊削除・ルーム削除・共有ボタン・公開トグル)
+- `/{roomId}/admin` : 管理者画面(参加者画面の全機能 + 短冊削除・ルーム削除・共有ボタン・公開トグル・上限値の編集)
   - 管理者は `revealed` の状態に関わらず常に全短冊を閲覧できる(モデレーション用途)
   - 参加者画面と管理者画面はロールをURLのみで判定する(サーバー側の強制なし。ルームIDを知っていれば誰でも管理者画面に到達できる点は仕様として許容する)
   - 存在しない `roomId` へのアクセスは「ルームが見つかりません」+トップへのリンクを表示
@@ -33,49 +35,51 @@
 - 画面下部固定の入力バーから短冊を投稿できる(入力欄は通常の横書きでよい)
   - 「願い事」: 必須、1〜50文字
   - ハンドルネームはルーム入室時(`/`または入室ゲート)に確定済みのものを使う。投稿フォーム内では自由入力できない(なりすまし防止のため、投稿のたびに名前を変えられないようにする)。代わりに「名前を表示する/しない」トグルがあり、OFFにして投稿した短冊は匿名表示(「ななしさん」)になる。トグルは投稿ごとに選べ、選択状態はlocalStorageに保存され次回投稿時のデフォルトになる(過去に投稿済みの短冊には遡って影響しない)
-  - 1人(1ブラウザ)につき、1ルームあたり最大5個まで短冊を作成できる。上限に達したら投稿フォームを無効化し、「このルームでの投稿上限(5個)に達しました」等を表示する。localStorageのカウントによるソフト制限(いいね上限と同様、性善説ベース)
+  - 1人(1匿名uid)につき、1ルームあたり最大N個(ルームの`maxTanzakuPerUser`。初期値5)まで短冊を作成できる。上限に達したら投稿フォームを無効化し、「このルームでの投稿上限(N個)に達しました」等を表示する。上限はFirestoreルールで強制する(下記「Firestoreセキュリティルール」参照)
   - 「短冊の色」: 赤・黄・青の3色から1つを選択する(必須)。初期選択は投稿のたびにランダムに決まる(前回選んだ色は記憶しない)。選んだ色がそのままカード背景画像(`card_{color}.png`)になる
 - 投稿された短冊は即座に(Firestore onSnapshotのリアルタイム購読で)画面上のカードグリッドに反映される
   - ただし参加者画面では、管理者が「みんなに公開する」を押すまでは自分が作成した短冊のみ表示され、他人の短冊は見えない(read数節約のため)
   - 公開後は他人の短冊も含め全件閲覧可能になる
 - 短冊カードには「願い事」「ハンドルネーム」「♡アイコン + いいね数」を常設表示(拡大プレビューは無し)
 - ♡アイコンをクリックするとその場でいいねが+1される
-  - 同一ブラウザ・同一短冊につき最大3回まで(localStorageでカウント、3回に達したらアイコンを無効化)。性善説ベースのソフト制限でよい
+  - 同一uid・同一短冊につき最大N回まで(ルームの`maxLikesPerTanzaku`。初期値3)。上限はFirestoreルールで強制し、上限に達したらアイコンを無効化する
 - いいね数が多いほど短冊カードが光る演出(box-shadow等によるglow。段階的に強くする)
 - 参加者は短冊を削除できない(削除ボタン自体が表示されない)
-- 画面上部などに簡単なルール表示(例: 「50文字以内で書いてね」「他の人の短冊に3回までいいねできるよ」「他の人が嫌な気持ちになる願い事は書かないでね」)
+- 画面上部などに簡単なルール表示(例: 「50文字以内で書いてね」「他の人の短冊にN回までいいねできるよ」(Nはルームの設定値)「他の人が嫌な気持ちになる願い事は書かないでね」)
 
 ### 管理者(`/{roomId}/admin`)のみの追加機能
 - 「みんなに公開する」トグルボタン: `rooms/{roomId}.revealed` を `true`/`false` に切り替える(再度非公開に戻すことも可能)
 - 各短冊カードに削除ボタンが表示され、押すとその短冊が削除される(`deleteDoc`)
 - 「ルームを削除」ボタン: 確認ダイアログの後、そのルームの短冊を全件削除(バッチ削除。最大200件程度なのでFirestoreの1バッチ500件制限内で収まる)→ ルームドキュメント自体を削除 → `/` へリダイレクト
+- 上限値の編集フォーム: 「投稿上限(個/人)」「いいね上限(回/短冊)」の数値入力+保存ボタン。`updateRoomLimits`で`rooms/{roomId}`を更新し、全員の画面とサーバー側の判定に即座に反映される(1以上の整数のみ)
 - 「共有する」ボタン: モーダルを開き、ルームキーを画面中央に大きく表示 + 参加者用リンク `https://<host>/{roomId}` のQRコード(`qrcode.react`の`QRCodeSVG`で生成、外部API不使用)を表示する。モーダル内の「リンクをコピーする」ボタンでクリップボードにコピーできる(コピー後は「コピーしました」表示)
 
 ## データモデル(Firestore)
-- `rooms/{roomId}` : `{ createdAt: Timestamp, revealed: boolean }` (`roomId` = 6桁のルームキーそのもの。`revealed`は作成時`false`)
+- `rooms/{roomId}` : `{ createdAt: Timestamp, revealed: boolean, maxTanzakuPerUser: number, maxLikesPerTanzaku: number }` (`roomId` = 6桁のルームキーそのもの。`revealed`は作成時`false`。上限値2つは作成時に定数の初期値を書き込み、以後は管理者が編集できる)
 - `rooms/{roomId}/tanzaku/{tanzakuId}` :
   - `wish: string`(1〜50文字)
   - `handle: string`(0〜8文字、空文字許容。投稿時に「名前を表示しない」を選んだ場合は空文字で保存する)
   - `color: 'red' | 'yellow' | 'blue'`(投稿時にユーザーが選択。カード背景画像 `card_{color}.png` の出し分けに使用)
   - `likeCount: number`(作成時0)
-  - `authorClientId: string`(投稿ブラウザのクライアントID。非公開時の「自分の短冊のみ表示」フィルタに使用)
+  - `authorUid: string`(投稿者の匿名認証uid。ルールで`request.auth.uid`と一致することを強制。非公開時の「自分の短冊のみ表示」フィルタにも使用)
   - `createdAt: Timestamp`(`serverTimestamp()`)
+- `rooms/{roomId}/tanzaku/{tanzakuId}/likedBy/{uid}` : `{ count: number }`(そのuidがこの短冊にいいねした回数)
+- `rooms/{roomId}/authorCounters/{uid}` : `{ tanzakuCount: number }`(そのuidがこのルームで作成した短冊の数。管理者が短冊を削除しても減らない)
 
 ## Firestoreセキュリティルール
-複雑なルールは組まず、read/write(create/update/delete含む)を全面許可する。
-```
-match /databases/{database}/documents {
-  match /rooms/{roomId} {
-    allow read, write: if true;
-    match /tanzaku/{tanzakuId} {
-      allow read, write: if true;
-    }
-  }
-}
-```
-バリデーション(文字数上限など)はクライアント側(フォーム送信前)でのみ行う。「非公開時は自分の短冊しか見えない」もクライアントのクエリ条件(`where('authorClientId','==',myClientId)`)による制御であり、ルール上は誰でも全件readできる点に注意(ブラウザの開発者ツール等で直接Firestoreを叩けば非公開中でも他人の短冊を読めてしまう。1日限りのアイスブレイク用途として許容する)。
+全文は `firestore.rules`。要点は以下。
+- `rooms/{roomId}`: readは全許可。createは`revealed == false`かつ上限値2つが正の整数であること。updateは`revealed`/`maxTanzakuPerUser`/`maxLikesPerTanzaku`のみ変更可(管理者判定はしないので誰でも可)。deleteは全許可
+- `tanzaku/{tanzakuId}`: readは全許可。createは`authorUid == request.auth.uid`、各フィールドのバリデーション(願い事1〜50文字・ハンドル8文字以内・色・`likeCount == 0`)に加え、**同じ書き込みで自分の`authorCounters/{uid}`がちょうど+1されていること**(`getAfter()`で検証)。updateは`likeCount`の+1のみで、**同じ書き込みで自分の`likedBy/{uid}`がちょうど+1されていること**。deleteは全許可
+- `likedBy/{uid}` / `authorCounters/{uid}`: 本人のuidのみ読み書き可。createは1のみ、updateは直前の値+1のみで、ルームの上限値以下であること。deleteは不可
+- 文字数などのバリデーションはクライアント側(フォーム送信前)でも行う
 
-**既知のトレードオフ**: ルームIDさえ分かれば誰でも `/{roomId}/admin` に到達でき、公開トグルや削除も操作できてしまう(サーバー側の強制なし)。
+ルールの`get()`は書き込み前の状態を読むため、初回投稿(カウンタがまだ無い)で評価が失敗する。そこでカウンタ・`likedBy`の「同じ書き込みで+1されたこと」は`getAfter()`で検証する。
+
+**既知の限界**: Firestore SDKを直接叩けば、1回のバッチ書き込みでカウンタを1だけ増やし、短冊を複数作ることはできてしまう(1回のバッチで書けるのは最大500件、その回数はカウンタの上限までに制限される)。開発者ツールでlocalStorageを書き換える程度の突破は防げるので、これは許容する。いいねは1回の書き込みで同じ短冊を1度しか更新できないので、この迂回はできない。
+
+「非公開時は自分の短冊しか見えない」はクライアントのクエリ条件(`where('authorUid','==',uid)`)による制御であり、ルール上は誰でも全件readできる点に注意(ブラウザの開発者ツール等で直接Firestoreを叩けば非公開中でも他人の短冊を読めてしまう。1日限りのアイスブレイク用途として許容する)。
+
+**既知のトレードオフ**: ルームIDさえ分かれば誰でも `/{roomId}/admin` に到達でき、公開トグル・削除・上限値の編集も操作できてしまう(サーバー側の強制なし)。
 また、ハンドルネームの保存もlocalStorageのみで認証は無いため、別ブラウザ/シークレットウィンドウ/localStorage削除を使えば誰でも同じ名前を再度名乗ることは技術的に可能(完全な、なりすまし防止ではない)。今回の変更で防ぎたいのは「同じルームに滞在中に投稿のたびに気軽に名前を変えられる」状態であり、それ以上の強い保証はしない。
 
 ## 運用上の注意(Firestore無料枠について)
@@ -86,7 +90,7 @@ match /databases/{database}/documents {
 - それでも当日の総アクセス量が読めない場合は、公開のタイミングを会の終盤に寄せる・いいねの多さより「見る楽しさ」を優先する等の運用上の工夫で吸収する想定
 
 ## いいね/glow演出の仕様
-- `getGlowStyle(likeCount: number): React.CSSProperties` という関数に閉じ込める。likeCountは1ブラウザにつき上限3だが、複数人からのいいねが積み重なるため合計値は3を大きく超えうる(最大30人×3=90が理論上限)。閾値は以下を初期値とし、当日の見た目調整で変更可能:
+- `getGlowStyle(likeCount: number): React.CSSProperties` という関数に閉じ込める。likeCountは1uidにつき上限3(初期値)だが、複数人からのいいねが積み重なるため合計値は3を大きく超えうる(最大30人×3=90が理論上限)。閾値は以下を初期値とし、当日の見た目調整で変更可能:
 
 | likeCount | 見た目 |
 |---|---|
@@ -119,28 +123,30 @@ match /databases/{database}/documents {
 「画面に見えていないカードの描画负荷を遅らせたい」という要望には、CSSの `content-visibility: auto`(+ `contain-intrinsic-size` でおおよそのカードサイズを指定)を各`TanzakuCard`に指定する方式で対応する。ビューポート外のカードはブラウザがレイアウト・ペイントを自動的にスキップするため、JS側で仮想スクロールライブラリを導入する必要がない(6時間の実装リミットに合う簡易策)。
 
 ## ローカルストレージ(ブラウザごとの状態管理)
-- `tanabata:clientId` : ブラウザ初回アクセス時に生成する一意なID(`crypto.randomUUID()`など)。短冊作成時に `authorClientId` としてFirestoreに保存し、非公開時の「自分の短冊のみ表示」クエリのキーにも使う
+- 投稿者IDはlocalStorageでは持たず、Firebase匿名認証の`uid`を使う(認証状態はFirebase SDKがブラウザに保存する)
 - `tanabata:handle` : ルーム入室時(`/`または入室ゲート)に確定したハンドルネーム。ルーム内の投稿フォームでは編集できず、この値がそのまま(または非表示トグルONなら空文字に置き換えて)投稿される
 - `tanabata:showHandle` : 「名前を表示する/しない」トグルの状態(`"true"`/`"false"`、未設定時は表示する扱い)。次回投稿時のトグル初期値として使用
 - 短冊の色は記憶しない(投稿のたびにランダムなデフォルトを選び直す)ため、色に対応するlocalStorageキーは無い
-- `tanabata:{roomId}:likes` : `{ [tanzakuId]: number }` 形式。そのルームで自分がいいねした短冊ごとの回数(上限3のソフト制限に使用)
-- `tanabata:{roomId}:createdCount` : number。そのルームで自分(このブラウザ)が作成した短冊数(上限5のソフト制限に使用)。管理者が短冊を削除しても減算しない簡易実装(削除後に投稿枠が復活しない点は許容する)
+- 投稿数・いいね回数のカウントはlocalStorageでは持たない(Firestoreの`authorCounters`/`likedBy`が真実の情報源)
 
 ## コンポーネント構成の方針
 - `app/page.tsx` : ハンドルネーム入力(必須) + ルームキー入力 + ルーム作成
 - `app/[roomId]/page.tsx` : 参加者画面(`RoomView`をレンダリングするだけの薄いページ)
 - `app/[roomId]/admin/page.tsx` : 管理者画面(同上、`isAdmin=true`)
-- `components/RoomView.tsx` : 参加者画面・管理者画面で共通利用。マウント時に`clientId`と`handle`をlocalStorageから読み込み、`handle`が未設定(空文字)ならハンドルネーム入力ゲートを表示してからでないと本文(`TanzakuGrid`/`TanzakuForm`)を描画しない
+- `components/RoomView.tsx` : 参加者画面・管理者画面で共通利用。マウント時に`handle`をlocalStorageから読み込み、`subscribeAuthUid`で匿名認証の`uid`を取得する(`uid`が`null`の間は読み込み中表示)。`handle`が未設定(空文字)ならハンドルネーム入力ゲートを表示してからでないと本文(`TanzakuGrid`/`TanzakuForm`)を描画しない
 - 参加者画面・管理者画面は `TanzakuGrid` / `TanzakuCard` / `TanzakuForm` を共通利用し、`isAdmin` propで削除ボタン・ルーム削除・共有ボタン・公開トグルの表示有無のみ出し分ける
 - `TanzakuForm` はハンドルネームの自由入力欄を持たず、`RoomView`から確定済みの`handle`をpropで受け取る。表示する代わりに「名前を表示する/しない」トグルを持つ
+- `TanzakuForm` の「残りN枚」は、取得済みの`tanzakuList`を`authorUid === uid`で数えて算出する(追加のreadを増やさない)。管理者が削除した短冊はここから消えるがサーバーのカウンタは減らないため、表示上は残りがあっても投稿が拒否されることがある。そのときは`LimitReachedError`を受けてフォームを上限到達表示に切り替える
+- `TanzakuGrid` のいいね可否は、セッション内のReact state(`{ [tanzakuId]: 回数 }`)で持つ。`likedBy`を1枚ずつ購読するとreadが嵩むため。リロードで消えるが、再読み込み後に上限を超えて押した場合はトランザクションが`LimitReachedError`を投げるので、それを受けてボタンを無効化する
+- `components/RoomLimitsForm.tsx` : 管理者用の上限値編集フォーム。`key`に現在の上限値を渡し、他の管理者が更新したら入力欄を最新値で作り直す
 - `components/ShareModal.tsx` : 「共有する」ボタンで開くモーダル。ルームキー(大表示)・QRコード(`qrcode.react`)・共有URL・コピー ボタンを表示する
 - `lib/sortTanzaku.ts` : `sortTanzaku(list, mode)`。`mode`は`"likeCount" | "createdAt"`で、`RoomView`が並び順トグルの状態に応じて呼び出す
 - `TanzakuGrid` は横スクロールコンテナ(`overflow-x: auto`)の中に `TanzakuCard` を1行(`flex`)で並べるだけのシンプルな実装でよい(折り返し・座標計算は不要)。各`TanzakuCard`に`content-visibility: auto`を指定し、画面外カードの描画コストを抑える
 - `lib/firebase/client.ts` : Firebase Client SDK初期化(`NEXT_PUBLIC_FIREBASE_*` 環境変数)
-- `useRoomTanzaku(roomId, isAdmin)` フック:
-  - `rooms/{roomId}` を `onSnapshot` で購読して `revealed` を取得
+- `useRoomTanzaku(roomId, isAdmin, uid)` フック:
+  - `rooms/{roomId}` を `onSnapshot` で購読して `room`(`revealed`と上限値)を取得
   - `isAdmin` が true、または `revealed` が true の場合: 全件 `onSnapshot`(orderBy createdAt)
-  - それ以外(非公開中の参加者): `where('authorClientId','==', myClientId)` で絞った `onSnapshot`
+  - それ以外(非公開中の参加者): `where('authorUid','==', uid)` で絞った `onSnapshot`(`uid`が`null`の間は購読しない)
   - `revealed` の値が変化したタイミングで購読クエリを切り替える(前のリスナーをunsubscribeして再購読)
 
 ## 型定義
@@ -152,6 +158,8 @@ import type { Timestamp } from "firebase/firestore";
 export interface RoomDoc {
   createdAt: Timestamp;
   revealed: boolean;
+  maxTanzakuPerUser: number;
+  maxLikesPerTanzaku: number;
 }
 
 export type TanzakuColor = "red" | "yellow" | "blue";
@@ -161,13 +169,23 @@ export interface TanzakuDoc {
   handle: string; // 空文字許容
   color: TanzakuColor;
   likeCount: number;
-  authorClientId: string;
+  authorUid: string;
   createdAt: Timestamp;
 }
 
 // Firestoreドキュメントにidを合成したクライアント側の表示用型
 export interface Tanzaku extends TanzakuDoc {
   id: string;
+}
+
+// rooms/{roomId}/authorCounters/{uid}
+export interface AuthorCounterDoc {
+  tanzakuCount: number;
+}
+
+// rooms/{roomId}/tanzaku/{tanzakuId}/likedBy/{uid}
+export interface LikedByDoc {
+  count: number;
 }
 ```
 
@@ -178,8 +196,9 @@ export interface Tanzaku extends TanzakuDoc {
 export const WISH_MAX_LENGTH = 50;
 // カード幅(約100〜120px)で折り返さず1行表示するための上限
 export const HANDLE_MAX_LENGTH = 8;
-export const MAX_TANZAKU_PER_ROOM_PER_USER = 5;
-export const MAX_LIKES_PER_TANZAKU_PER_USER = 3;
+// ルーム作成時の初期値。実際の上限は各ルームドキュメントの値(管理者が編集可能)
+export const DEFAULT_MAX_TANZAKU_PER_ROOM_PER_USER = 5;
+export const DEFAULT_MAX_LIKES_PER_TANZAKU_PER_USER = 3;
 export const ROOM_KEY_LENGTH = 6;
 // 0/O, 1/I/L など紛らわしい文字を除外した文字セット
 export const ROOM_KEY_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -199,40 +218,41 @@ export function getRandomTanzakuColor(): TanzakuColor;
 ```
 
 ## データアクセス層(関数シグネチャ)
-firebase-admin/API Routeを使わないため、これらは全てクライアントサイドから直接Firestore SDKを呼ぶ薄いラッパー関数として実装する(Firebase JS SDK v10+ モジュラーAPI: `firebase/firestore` の `doc`, `collection`, `addDoc`, `getDoc`, `getDocs`, `onSnapshot`, `query`, `where`, `orderBy`, `updateDoc`, `deleteDoc`, `writeBatch`, `increment`, `serverTimestamp` を使用)。
+firebase-admin/API Routeを使わないため、これらは全てクライアントサイドから直接Firestore SDKを呼ぶ薄いラッパー関数として実装する(Firebase JS SDK v10+ モジュラーAPI: `firebase/firestore` の `doc`, `collection`, `addDoc`, `getDoc`, `getDocs`, `onSnapshot`, `query`, `where`, `orderBy`, `updateDoc`, `deleteDoc`, `writeBatch`, `runTransaction`, `increment`, `serverTimestamp` を使用)。
 
 ```ts
 // lib/rooms.ts
 function generateRoomKey(): string; // ROOM_KEY_CHARSからROOM_KEY_LENGTH文字をランダム生成
-async function createRoom(): Promise<string>; // 生成→存在チェック→衝突ならROOM_KEY_CREATE_MAX_RETRIESまでリトライ→roomIdを返す。失敗時は例外
+async function createRoom(): Promise<string>; // 生成→存在チェック→衝突ならROOM_KEY_CREATE_MAX_RETRIESまでリトライ→roomIdを返す。上限値はDEFAULT_*で初期化。失敗時は例外
 async function getRoom(roomId: string): Promise<RoomDoc | null>;
 function subscribeRoom(roomId: string, cb: (room: RoomDoc | null) => void): () => void; // unsubscribe関数を返す
 async function setRevealed(roomId: string, revealed: boolean): Promise<void>;
-async function deleteRoomCascade(roomId: string): Promise<void>; // tanzakuサブコレクション全件+roomドキュメントをwriteBatchで削除
+async function updateRoomLimits(roomId: string, limits: { maxTanzakuPerUser?: number; maxLikesPerTanzaku?: number }): Promise<void>; // 管理者の上限値編集フォームから呼ぶ
+async function deleteRoomCascade(roomId: string): Promise<void>; // tanzakuサブコレクション全件+roomドキュメントをwriteBatchで削除(likedBy/authorCountersはルールで削除不可のため残る)
+
+// lib/auth.ts
+function subscribeAuthUid(cb: (uid: string | null) => void): () => void; // onAuthStateChangedを購読し、未サインインならsignInAnonymouslyする
 
 // lib/tanzaku.ts
-async function createTanzaku(roomId: string, input: { wish: string; handle: string; color: TanzakuColor; authorClientId: string }): Promise<string>; // 新規ドキュメントIDを返す
-function subscribeTanzaku(roomId: string, opts: { authorClientId?: string }, cb: (list: Tanzaku[]) => void): () => void; // authorClientId指定時はwhereで絞り込み、未指定なら全件
-async function likeTanzaku(roomId: string, tanzakuId: string): Promise<void>; // likeCountをincrement(1)
+class LimitReachedError extends Error {} // 投稿上限・いいね上限に達したときにcreateTanzaku/likeTanzakuが投げる
+async function createTanzaku(roomId: string, input: { wish: string; handle: string; color: TanzakuColor; authorUid: string }): Promise<string>; // runTransactionでauthorCountersの+1と短冊作成を同時に行う。新規ドキュメントIDを返す
+function subscribeTanzaku(roomId: string, opts: { authorUid?: string }, cb: (list: Tanzaku[]) => void): () => void; // authorUid指定時はwhereで絞り込み、未指定なら全件
+async function likeTanzaku(roomId: string, tanzakuId: string, uid: string): Promise<number>; // runTransactionでlikedByの+1とlikeCountのincrement(1)を同時に行う。このuidの通算いいね回数を返す
 async function deleteTanzaku(roomId: string, tanzakuId: string): Promise<void>;
 ```
 
 ```ts
 // lib/localStorage.ts
-function getClientId(): string; // tanabata:clientId を取得、無ければcrypto.randomUUID()で生成して保存
 function getHandle(): string; // 未設定時は "" を返す(=入室ゲートを出す判定に使う)
 function setHandle(handle: string): void;
 function getShowHandle(): boolean; // 未設定時はtrue
 function setShowHandle(value: boolean): void;
-function getCreatedCount(roomId: string): number;
-function incrementCreatedCount(roomId: string): void; // createTanzaku成功後にのみ呼ぶ
-function getLikeCount(roomId: string, tanzakuId: string): number;
-function incrementLikeCount(roomId: string, tanzakuId: string): void; // likeTanzaku成功後にのみ呼ぶ
 ```
 
 ```ts
 // hooks/useRoomTanzaku.ts
-function useRoomTanzaku(roomId: string, isAdmin: boolean): {
+function useRoomTanzaku(roomId: string, isAdmin: boolean, uid: string | null): {
+  room: RoomDoc | null;
   tanzakuList: Tanzaku[];
   revealed: boolean;
   loading: boolean;
@@ -249,14 +269,14 @@ function useRoomTanzaku(roomId: string, isAdmin: boolean): {
 - ルームキーは大文字小文字を区別しない: 入力値は常に `.toUpperCase()` してから検索・遷移に使う(生成時も大文字のみ生成)
 - 「願い事」の入力欄は単一行の `<input type="text">`(`textarea`ではない)。改行は考慮不要で、縦書き表示時の折り返しはCSSの`writing-mode: vertical-rl`が自動で処理する
 - 投稿フォームはFirestoreへの書き込みが完了するまで送信ボタンを`disabled`にし、二重送信(連打による重複作成)を防ぐ
-- `createdCount`(投稿数)・`likes`(いいね数)のlocalStorageカウントは、**Firestoreへの書き込みが成功した後にのみ**インクリメントする(失敗時に枠を消費しない)
+- 投稿数・いいね回数のカウンタ(`authorCounters`/`likedBy`)は、短冊の作成・`likeCount`の更新と**同じトランザクションで**+1する(失敗時に枠を消費しない)
 - 短冊一覧の並び順は「いいね順」(デフォルト。いいね数が多い順、同数は投稿が古い順のタイブレーク)と「新着順」(投稿が古い順)を**管理者・参加者どちらの画面からもトグルで切り替え可能**。切り替えは既に取得済みのデータをクライアント側で並べ替えるだけなのでFirestoreへの再アクセスは発生しない。いいね順選択中はいいねが増減するとその短冊の表示位置がリアルタイムに変わる(横スクロール中に並びが動く点は仕様として許容する)。並び順の選択自体はページを離れると保持されない(localStorageには保存しない)
 - 個別短冊の削除(管理者)は確認ダイアログなしで即時実行してよい。ルーム全体の削除のみ確認ダイアログを挟む(取り返しがつかないため)
 - `deleteRoomCascade` は `writeBatch` 1回(上限500件)で完結する前提(想定最大200短冊+ルームドキュメント1件=201件のため)。それ以上の規模のルームは非対応(スコープ外、想定30人には十分)
 - 願い事の内容に対する自動検閲(NGワードフィルタ等)は行わない。管理者が目視で気づいた短冊を手動削除する運用とする
 - `TanzakuCard` の背景画像は `background-image: url(...)` + `background-size: cover` で指定し、カード自体は `aspect-ratio: 210 / 574` で固定する(画像と完全に同じ比率なのでcoverでも欠けない)。`next/image`の`fill`は必須ではないが、使う場合はコンテナの位置指定(`position: relative`)を忘れない
-- `subscribeTanzaku` は Firestore側で `where('authorClientId','==',...).orderBy(...)` のような**フィールドが異なるwhere+orderByの組み合わせ**を使わない(複合インデックスの作成が必要になり、実行時に「index を作ってください」エラーで詰まりやすいため)。絞り込みは `where` のみをFirestoreに投げ、購読直後の基準順は`createdAt`昇順で安定させる。表示上の「いいね順/新着順」トグルは`lib/sortTanzaku.ts`の`sortTanzaku(list, mode)`が担当し、`RoomView`が`useMemo`で並べ替えてから`TanzakuGrid`に渡す(Firestoreの再購読は発生しない)
-- `RoomView`での`handle`の状態は `null`(localStorage未読込)/ `""`(読込済みだが未設定=入室ゲートを出す)/ それ以外(設定済み)の3値で判定する。`clientId`のような「空文字=未読込」の2値判定を流用すると、「読込中」と「本当に未設定」を区別できず入室ゲートが誤って一瞬表示される(または表示されない)ので注意
+- `subscribeTanzaku` は Firestore側で `where('authorUid','==',...).orderBy(...)` のような**フィールドが異なるwhere+orderByの組み合わせ**を使わない(複合インデックスの作成が必要になり、実行時に「index を作ってください」エラーで詰まりやすいため)。絞り込みは `where` のみをFirestoreに投げ、購読直後の基準順は`createdAt`昇順で安定させる。表示上の「いいね順/新着順」トグルは`lib/sortTanzaku.ts`の`sortTanzaku(list, mode)`が担当し、`RoomView`が`useMemo`で並べ替えてから`TanzakuGrid`に渡す(Firestoreの再購読は発生しない)
+- `RoomView`での`handle`の状態は `null`(localStorage未読込)/ `""`(読込済みだが未設定=入室ゲートを出す)/ それ以外(設定済み)の3値で判定する。「空文字=未読込」の2値判定を流用すると、「読込中」と「本当に未設定」を区別できず入室ゲートが誤って一瞬表示される(または表示されない)ので注意
 
 ## 環境変数
 ```
@@ -270,11 +290,12 @@ NEXT_PUBLIC_FIREBASE_APP_ID
 通常のFirebase Web設定値のみ(Firebaseコンソールの「プロジェクトの設定」からコピー)。firebase-admin/サービスアカウントは使用しないため非公開env変数は不要。Vercelの環境変数に登録する。
 
 ## スコープ外(今回はやらないこと)
-- ユーザー認証・ログイン機能
+- ログイン機能(匿名認証のみ使う)
 - 管理者操作のサーバー側強制(URL判定のみで許容する)
 - 短冊の編集(削除のみ、内容修正は不可)
 - 拡大プレビュー(モーダル)
-- いいねの完全な不正防止(localStorageクリアで回避可能な点は許容)
+- 投稿上限の完全な不正防止(Firestore SDKを直接叩くバッチ書き込みでの迂回は許容。上記「既知の限界」参照)
+- 1人が複数の匿名uidを使い分けること(シークレットウィンドウ等で別uidになる)の防止
 - モバイル最適化以上のレスポンシブ細部調整、多言語対応
 
 ## 実装ステップの目安(合計6時間想定)

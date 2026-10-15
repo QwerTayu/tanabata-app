@@ -4,15 +4,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRoomTanzaku } from "@/hooks/useRoomTanzaku";
+import { subscribeAuthUid } from "@/lib/auth";
 import { HANDLE_MAX_LENGTH } from "@/lib/constants";
-import {
-  getClientId,
-  getHandle,
-  setHandle as saveHandle,
-} from "@/lib/localStorage";
+import { getHandle, setHandle as saveHandle } from "@/lib/localStorage";
 import { deleteRoomCascade, setRevealed } from "@/lib/rooms";
 import { sortTanzaku, type SortMode } from "@/lib/sortTanzaku";
 import { deleteTanzaku } from "@/lib/tanzaku";
+import { RoomLimitsForm } from "./RoomLimitsForm";
 import { ShareModal } from "./ShareModal";
 import { TanzakuForm } from "./TanzakuForm";
 import { TanzakuGrid } from "./TanzakuGrid";
@@ -24,11 +22,13 @@ interface RoomViewProps {
 
 export function RoomView({ roomId, isAdmin }: RoomViewProps) {
   const router = useRouter();
-  const { tanzakuList, revealed, loading, error } = useRoomTanzaku(
+  // null = 匿名サインイン待ち
+  const [uid, setUid] = useState<string | null>(null);
+  const { room, tanzakuList, revealed, loading, error } = useRoomTanzaku(
     roomId,
     isAdmin,
+    uid,
   );
-  const [clientId, setClientId] = useState("");
   // null = localStorage未読込、"" = 読込済みだが未設定、それ以外 = 設定済み
   const [handle, setHandleState] = useState<string | null>(null);
   const [gateHandleInput, setGateHandleInput] = useState("");
@@ -46,9 +46,10 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
   useEffect(() => {
     // ブラウザのlocalStorageから読むだけの初期化なので、マウント後1回だけ実行する
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setClientId(getClientId());
     setHandleState(getHandle());
   }, []);
+
+  useEffect(() => subscribeAuthUid(setUid), []);
 
   if (error) {
     return (
@@ -61,7 +62,7 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
     );
   }
 
-  if (loading || !clientId || handle === null) {
+  if (loading || !uid || !room || handle === null) {
     return (
       <main className="flex flex-1 items-center justify-center text-white/70">
         読み込み中…
@@ -173,6 +174,15 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
         </div>
       )}
 
+      {isAdmin && (
+        <RoomLimitsForm
+          key={`${room.maxTanzakuPerUser}-${room.maxLikesPerTanzaku}`}
+          roomId={roomId}
+          maxTanzakuPerUser={room.maxTanzakuPerUser}
+          maxLikesPerTanzaku={room.maxLikesPerTanzaku}
+        />
+      )}
+
       {!isAdmin && !revealed && (
         <p className="px-3 py-2 text-center text-xs text-white/70">
           他の人の短冊は管理者が公開するまでお待ちください(今はあなたの短冊のみ表示しています)
@@ -209,6 +219,8 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
         <TanzakuGrid
           roomId={roomId}
           tanzakuList={sortedTanzakuList}
+          uid={uid}
+          maxLikesPerTanzaku={room.maxLikesPerTanzaku}
           isAdmin={isAdmin}
           onDelete={isAdmin ? handleDeleteTanzaku : undefined}
         />
@@ -217,12 +229,18 @@ export function RoomView({ roomId, isAdmin }: RoomViewProps) {
       <div className="mx-3 mb-2 rounded-2xl border-2 border-[#6b4423] bg-[#a9764f]/90 px-4 py-2 text-xs text-white shadow-md">
         <ul className="space-y-0.5">
           <li>・50文字以内で願い事を書いてね</li>
-          <li>・他の人の短冊にいいねを送れるよ(1つの短冊につき3回まで)</li>
+          <li>・他の人の短冊にいいねを送れるよ(1つの短冊につき{room.maxLikesPerTanzaku}回まで)</li>
           <li>・他の人が嫌な気持ちになる願い事は書かないでね</li>
         </ul>
       </div>
 
-      <TanzakuForm roomId={roomId} clientId={clientId} handle={handle} />
+      <TanzakuForm
+        roomId={roomId}
+        uid={uid}
+        handle={handle}
+        tanzakuList={tanzakuList}
+        maxTanzakuPerUser={room.maxTanzakuPerUser}
+      />
 
       {showShareModal && (
         <ShareModal

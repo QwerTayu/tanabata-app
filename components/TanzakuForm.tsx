@@ -3,32 +3,38 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
   getRandomTanzakuColor,
-  MAX_TANZAKU_PER_ROOM_PER_USER,
   TANZAKU_COLORS,
   WISH_MAX_LENGTH,
 } from "@/lib/constants";
 import {
-  getCreatedCount,
   getShowHandle,
-  incrementCreatedCount,
   setShowHandle as saveShowHandle,
 } from "@/lib/localStorage";
-import { createTanzaku } from "@/lib/tanzaku";
-import type { TanzakuColor } from "@/lib/types";
+import { createTanzaku, LimitReachedError } from "@/lib/tanzaku";
+import type { Tanzaku, TanzakuColor } from "@/lib/types";
 
 interface TanzakuFormProps {
   roomId: string;
-  clientId: string;
+  uid: string;
   handle: string;
+  tanzakuList: Tanzaku[];
+  maxTanzakuPerUser: number;
 }
 
-export function TanzakuForm({ roomId, clientId, handle }: TanzakuFormProps) {
+export function TanzakuForm({
+  roomId,
+  uid,
+  handle,
+  tanzakuList,
+  maxTanzakuPerUser,
+}: TanzakuFormProps) {
   const [wish, setWish] = useState("");
   const [showHandle, setShowHandleValue] = useState(true);
   // SSR時とクライアントの初回描画でランダム値が食い違うと不一致を起こすため、
   // 初期値は固定にしておき、マウント後のeffectでランダムな色に差し替える
   const [color, setColor] = useState<TanzakuColor>("red");
-  const [createdCount, setCreatedCount] = useState(0);
+  // サーバーに上限到達で拒否されたときの上限値。管理者が上限を上げたら自然に解除される
+  const [rejectedAtLimit, setRejectedAtLimit] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,11 +43,14 @@ export function TanzakuForm({ roomId, clientId, handle }: TanzakuFormProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowHandleValue(getShowHandle());
     setColor(getRandomTanzakuColor());
-    setCreatedCount(getCreatedCount(roomId));
   }, [roomId]);
 
-  const remaining = MAX_TANZAKU_PER_ROOM_PER_USER - createdCount;
-  const reachedLimit = remaining <= 0;
+  // 追加のFirestore読み取りを増やさないよう、購読済みの一覧から自分の投稿数を数える。
+  // 管理者が削除した短冊はここから消えるがサーバー側のカウンタは減らないので、
+  // 実際の上限判定はcreateTanzakuのトランザクション(とFirestoreルール)に任せる。
+  const createdCount = tanzakuList.filter((t) => t.authorUid === uid).length;
+  const remaining = Math.max(maxTanzakuPerUser - createdCount, 0);
+  const reachedLimit = remaining <= 0 || rejectedAtLimit === maxTanzakuPerUser;
 
   function handleToggleShowHandle(checked: boolean) {
     setShowHandleValue(checked);
@@ -60,14 +69,16 @@ export function TanzakuForm({ roomId, clientId, handle }: TanzakuFormProps) {
         wish: trimmedWish.slice(0, WISH_MAX_LENGTH),
         handle: showHandle ? handle : "",
         color,
-        authorClientId: clientId,
+        authorUid: uid,
       });
-      incrementCreatedCount(roomId);
-      setCreatedCount((c) => c + 1);
       setWish("");
       setColor(getRandomTanzakuColor());
-    } catch {
-      setError("投稿に失敗しました。もう一度お試しください。");
+    } catch (e) {
+      if (e instanceof LimitReachedError) {
+        setRejectedAtLimit(maxTanzakuPerUser);
+      } else {
+        setError("投稿に失敗しました。もう一度お試しください。");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -76,7 +87,7 @@ export function TanzakuForm({ roomId, clientId, handle }: TanzakuFormProps) {
   if (reachedLimit) {
     return (
       <div className="w-full border-t border-white/20 bg-black/30 px-4 py-3 text-center text-sm text-white">
-        このルームでの投稿上限({MAX_TANZAKU_PER_ROOM_PER_USER}個)に達しました
+        このルームでの投稿上限({maxTanzakuPerUser}個)に達しました
       </div>
     );
   }

@@ -1,14 +1,89 @@
 rules_version = '2';
 
-// このアプリは認証機能を持たないため、意図的にread/writeを全面許可している。
-// (.claude/requirements.md の「Firestoreセキュリティルール」参照)
+// 投稿上限・いいね上限をサーバー側で強制する(.claude/requirements.md の「Firestoreセキュリティルール」参照)。
+// 管理者権限(削除・公開トグル・上限値の編集)はURL判定のみの仕様なので、ルームの更新/削除と短冊の削除は誰でも可。
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isPositiveInt(v) {
+      return v is int && v > 0;
+    }
+
+    function roomData(roomId) {
+      return get(/databases/$(database)/documents/rooms/$(roomId)).data;
+    }
+
+    // 同じトランザクション内で、自分の投稿カウンタがちょうど+1されているか
+    function authorCounterIncremented(roomId) {
+      let path = /databases/$(database)/documents/rooms/$(roomId)/authorCounters/$(request.auth.uid);
+      let before = exists(path) ? get(path).data.tanzakuCount : 0;
+      return getAfter(path).data.tanzakuCount == before + 1;
+    }
+
+    // 同じトランザクション内で、自分のいいね回数ドキュメントがちょうど+1されているか
+    function likedByIncremented(roomId, tanzakuId) {
+      let path = /databases/$(database)/documents/rooms/$(roomId)/tanzaku/$(tanzakuId)/likedBy/$(request.auth.uid);
+      let before = exists(path) ? get(path).data.count : 0;
+      return getAfter(path).data.count == before + 1;
+    }
+
     match /rooms/{roomId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['createdAt', 'revealed', 'maxTanzakuPerUser', 'maxLikesPerTanzaku'])
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.revealed == false
+        && isPositiveInt(request.resource.data.maxTanzakuPerUser)
+        && isPositiveInt(request.resource.data.maxLikesPerTanzaku);
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revealed', 'maxTanzakuPerUser', 'maxLikesPerTanzaku'])
+        && request.resource.data.revealed is bool
+        && isPositiveInt(request.resource.data.maxTanzakuPerUser)
+        && isPositiveInt(request.resource.data.maxLikesPerTanzaku);
+      allow delete: if true;
 
       match /tanzaku/{tanzakuId} {
-        allow read, write: if true;
+        allow read: if true;
+        allow create: if request.auth != null
+          && request.resource.data.keys().hasOnly(['wish', 'handle', 'color', 'likeCount', 'authorUid', 'createdAt'])
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.wish is string
+          && request.resource.data.wish.size() > 0
+          && request.resource.data.wish.size() <= 50
+          && request.resource.data.handle is string
+          && request.resource.data.handle.size() <= 8
+          && request.resource.data.color in ['red', 'yellow', 'blue']
+          && request.resource.data.likeCount == 0
+          && request.resource.data.createdAt == request.time
+          && authorCounterIncremented(roomId);
+        allow update: if request.auth != null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
+          && request.resource.data.likeCount == resource.data.likeCount + 1
+          && likedByIncremented(roomId, tanzakuId);
+        allow delete: if true;
+
+        match /likedBy/{uid} {
+          allow read: if request.auth != null && request.auth.uid == uid;
+          allow create: if request.auth != null && request.auth.uid == uid
+            && request.resource.data.keys().hasOnly(['count'])
+            && request.resource.data.count == 1
+            && request.resource.data.count <= roomData(roomId).maxLikesPerTanzaku;
+          allow update: if request.auth != null && request.auth.uid == uid
+            && request.resource.data.keys().hasOnly(['count'])
+            && request.resource.data.count == resource.data.count + 1
+            && request.resource.data.count <= roomData(roomId).maxLikesPerTanzaku;
+          allow delete: if false;
+        }
+      }
+
+      match /authorCounters/{uid} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow create: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['tanzakuCount'])
+          && request.resource.data.tanzakuCount == 1
+          && request.resource.data.tanzakuCount <= roomData(roomId).maxTanzakuPerUser;
+        allow update: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['tanzakuCount'])
+          && request.resource.data.tanzakuCount == resource.data.tanzakuCount + 1
+          && request.resource.data.tanzakuCount <= roomData(roomId).maxTanzakuPerUser;
+        allow delete: if false;
       }
     }
   }

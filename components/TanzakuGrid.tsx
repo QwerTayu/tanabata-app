@@ -1,15 +1,15 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { MAX_LIKES_PER_TANZAKU_PER_USER } from "@/lib/constants";
-import { getLikeCount, incrementLikeCount } from "@/lib/localStorage";
-import { likeTanzaku } from "@/lib/tanzaku";
+import { LimitReachedError, likeTanzaku } from "@/lib/tanzaku";
 import type { Tanzaku } from "@/lib/types";
 import { TanzakuCard } from "./TanzakuCard";
 
 interface TanzakuGridProps {
   roomId: string;
   tanzakuList: Tanzaku[];
+  uid: string;
+  maxLikesPerTanzaku: number;
   isAdmin: boolean;
   onDelete?: (tanzakuId: string) => void;
 }
@@ -17,22 +17,27 @@ interface TanzakuGridProps {
 export function TanzakuGrid({
   roomId,
   tanzakuList,
+  uid,
+  maxLikesPerTanzaku,
   isAdmin,
   onDelete,
 }: TanzakuGridProps) {
-  // localStorageのいいね回数はReactのstateではないため、更新後に再描画させるための小さなカウンタ
-  const [, forceRender] = useState(0);
+  // いいね回数の真実の情報源はFirestore(likedBy/{uid})。短冊ごとに購読するとreadが嵩むため、
+  // ここではセッション内で分かった回数だけを持ち、ボタンの無効化に使う(リロードで消える)。
+  const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
 
   const handleLike = useCallback(
     async (tanzakuId: string) => {
-      if (getLikeCount(roomId, tanzakuId) >= MAX_LIKES_PER_TANZAKU_PER_USER) {
-        return;
+      try {
+        const count = await likeTanzaku(roomId, tanzakuId, uid);
+        setLikeCounts((prev) => ({ ...prev, [tanzakuId]: count }));
+      } catch (e) {
+        if (!(e instanceof LimitReachedError)) throw e;
+        // リロード前に押した分で既に上限に達していた
+        setLikeCounts((prev) => ({ ...prev, [tanzakuId]: maxLikesPerTanzaku }));
       }
-      await likeTanzaku(roomId, tanzakuId);
-      incrementLikeCount(roomId, tanzakuId);
-      forceRender((tick) => tick + 1);
     },
-    [roomId],
+    [roomId, uid, maxLikesPerTanzaku],
   );
 
   if (tanzakuList.length === 0) {
@@ -50,9 +55,7 @@ export function TanzakuGrid({
           key={tanzaku.id}
           tanzaku={tanzaku}
           isAdmin={isAdmin}
-          canLike={
-            getLikeCount(roomId, tanzaku.id) < MAX_LIKES_PER_TANZAKU_PER_USER
-          }
+          canLike={(likeCounts[tanzaku.id] ?? 0) < maxLikesPerTanzaku}
           onLike={handleLike}
           onDelete={onDelete}
         />
