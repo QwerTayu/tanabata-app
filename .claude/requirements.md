@@ -70,14 +70,14 @@
 全文は `firestore.rules`。要点は以下。
 - `rooms/{roomId}`: readは全許可。createは`revealed == false`かつ上限値2つが正の整数であること。updateは`revealed`/`maxTanzakuPerUser`/`maxLikesPerTanzaku`のみ変更可(管理者判定はしないので誰でも可)。deleteは全許可
 - `tanzaku/{tanzakuId}`: readは全許可。createは`authorUid == request.auth.uid`、各フィールドのバリデーション(願い事1〜50文字・ハンドル8文字以内・色・`likeCount == 0`)に加え、**同じ書き込みで自分の`authorCounters/{uid}`がちょうど+1されていること**(`getAfter()`で検証)、**ドキュメントIDが`{uid}__{+1後のカウンタ値}`であること**。updateは`likeCount`の+1のみで、**同じ書き込みで自分の`likedBy/{uid}`がちょうど+1されていること**。deleteは全許可
-- `likedBy/{uid}` / `authorCounters/{uid}`: 本人のuidのみ読み書き可。createは1のみ、updateは直前の値+1のみで、ルームの上限値以下であること。deleteは不可
+- `likedBy/{uid}` / `authorCounters/{uid}`: 本人のuidのみ読み書き可。値はintに限り(doubleの`1.0`を許すと短冊IDの検証で`string()`が`"1.0"`になるため)、createは1のみ、updateは直前の値+1のみで、ルームの上限値以下であること。deleteは不可
 - 文字数などのバリデーションはクライアント側(フォーム送信前)でも行う
 
 ルールの`get()`は書き込み前の状態を読むため、初回投稿(カウンタがまだ無い)で評価が失敗する。そこでカウンタ・`likedBy`の「同じ書き込みで+1されたこと」は`getAfter()`で検証する。
 
 「カウンタが+1されたこと」だけを見ると、1回のバッチでカウンタを1だけ増やしつつ短冊を複数作れてしまう(どの短冊のルールから見てもカウンタは+1されているため)。そこで短冊のドキュメントIDを`{uid}__{+1後のカウンタ値}`に固定し、カウンタ1つにつき作れる短冊を1件に絞る。カウンタは減らない(deleteも不可)ので、管理者が削除した短冊と同じIDで作り直すこともできない。いいねは1回の書き込みで同じ短冊を1度しか更新できないので、この迂回はもともとできない。
 
-ルールのテストは `tests/firestore.rules.test.mjs`(`@firebase/rules-unit-testing` + `node:test`)。`npm run test:rules` でFirestoreエミュレータを起動して実行する(Javaが必要)。本番へのルール反映は `npm run deploy:rules`(`firebase-tools`、デプロイ先は`.firebaserc`の`tanabata-app-ab447`。事前に`npx firebase login`が必要)。
+ルールのテストは `tests/firestore.rules.test.mjs`(`@firebase/rules-unit-testing` + `node:test`)。`lib/tanzaku.ts`はNodeの型除去でそのまま読み込み、`lib/firebase/client.ts`だけをテスト用のモジュール(`tests/firebase-client-stub.mjs`)に差し替えて、本物の`createTanzaku`もエミュレータに対して実行する。`npm run test:rules` でFirestoreエミュレータを起動して実行する(Javaが必要)。本番へのルール反映は `npm run deploy:rules`(`firebase-tools`、デプロイ先は`.firebaserc`の`tanabata-app-ab447`。事前に`npx firebase login`が必要)。
 
 「非公開時は自分の短冊しか見えない」はクライアントのクエリ条件(`where('authorUid','==',uid)`)による制御であり、ルール上は誰でも全件readできる点に注意(ブラウザの開発者ツール等で直接Firestoreを叩けば非公開中でも他人の短冊を読めてしまう。1日限りのアイスブレイク用途として許容する)。
 
