@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run build` — 本番ビルド(型チェックも含む)
 - `npm run lint` — ESLint実行
 - `npx tsc --noEmit` — 型チェックのみ実行
-- `npm run test:rules` — Firestoreエミュレータで`firestore.rules`のテスト(`tests/`)を実行(Javaが必要)
+- `npm run test:rules` — Firestoreエミュレータで`firestore.rules`のテスト(`tests/`)を実行(JavaとNode 22.18以上が必要)
 - `npm run deploy:rules` — `firestore.rules`を本番(`.firebaserc`のプロジェクト)にデプロイ
 
 ## プロジェクトの状態

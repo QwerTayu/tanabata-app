@@ -77,7 +77,7 @@
 
 「カウンタが+1されたこと」だけを見ると、1回のバッチでカウンタを1だけ増やしつつ短冊を複数作れてしまう(どの短冊のルールから見てもカウンタは+1されているため)。そこで短冊のドキュメントIDを`{uid}__{+1後のカウンタ値}`に固定し、カウンタ1つにつき作れる短冊を1件に絞る。カウンタは減らない(deleteも不可)ので、管理者が削除した短冊と同じIDで作り直すこともできない。いいねは1回の書き込みで同じ短冊を1度しか更新できないので、この迂回はもともとできない。
 
-ルールのテストは `tests/firestore.rules.test.mjs`(`@firebase/rules-unit-testing` + `node:test`)。`lib/tanzaku.ts`はNodeの型除去でそのまま読み込み、`lib/firebase/client.ts`だけをテスト用のモジュール(`tests/firebase-client-stub.mjs`)に差し替えて、本物の`createTanzaku`もエミュレータに対して実行する。`npm run test:rules` でFirestoreエミュレータを起動して実行する(Javaが必要)。本番へのルール反映は `npm run deploy:rules`(`firebase-tools`、デプロイ先は`.firebaserc`の`tanabata-app-ab447`。事前に`npx firebase login`が必要)。
+ルールのテストは `tests/firestore.rules.test.mjs`(`@firebase/rules-unit-testing` + `node:test`)。`lib/tanzaku.ts`はNodeの型除去でそのまま読み込み、`lib/firebase/client.ts`だけをテスト用のモジュール(`tests/firebase-client-stub.mjs`)に差し替えて、本物の`createTanzaku`もエミュレータに対して実行する。`npm run test:rules` でFirestoreエミュレータを起動して実行する(Javaと、Node 22.18以上(23系なら23.6以上)が必要。`.ts`の型除去と`module.registerHooks`を使うため。テストだけの要件なので、Vercelの実行環境の版を決める`package.json`の`engines`には書かない)。本番へのルール反映は `npm run deploy:rules`(`firebase-tools`、デプロイ先は`.firebaserc`の`tanabata-app-ab447`。事前に`npx firebase login`が必要)。
 
 「非公開時は自分の短冊しか見えない」はクライアントのクエリ条件(`where('authorUid','==',uid)`)による制御であり、ルール上は誰でも全件readできる点に注意(ブラウザの開発者ツール等で直接Firestoreを叩けば非公開中でも他人の短冊を読めてしまう。1日限りのアイスブレイク用途として許容する)。
 
