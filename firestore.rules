@@ -19,6 +19,14 @@ service cloud.firestore {
       return getAfter(path).data.tanzakuCount == before + 1;
     }
 
+    // 短冊IDが `{uid}__{書き込み後の投稿カウンタ値}` になっているか。
+    // 1回のバッチでカウンタを+1しつつ短冊を複数作る迂回を防ぐため、カウンタ1つにつき作れる短冊を1件に固定する
+    // (カウンタは authorCounters のルールで int に限っているので、string() は `1.0` ではなく `1` になる)
+    function tanzakuIdMatchesCounter(roomId, tanzakuId) {
+      let path = /databases/$(database)/documents/rooms/$(roomId)/authorCounters/$(request.auth.uid);
+      return tanzakuId == request.auth.uid + '__' + string(getAfter(path).data.tanzakuCount);
+    }
+
     // 同じトランザクション内で、自分のいいね回数ドキュメントがちょうど+1されているか
     function likedByIncremented(roomId, tanzakuId) {
       let path = /databases/$(database)/documents/rooms/$(roomId)/tanzaku/$(tanzakuId)/likedBy/$(request.auth.uid);
@@ -52,7 +60,8 @@ service cloud.firestore {
           && request.resource.data.color in ['red', 'yellow', 'blue']
           && request.resource.data.likeCount == 0
           && request.resource.data.createdAt == request.time
-          && authorCounterIncremented(roomId);
+          && authorCounterIncremented(roomId)
+          && tanzakuIdMatchesCounter(roomId, tanzakuId);
         allow update: if request.auth != null
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount'])
           && request.resource.data.likeCount == resource.data.likeCount + 1
@@ -63,10 +72,12 @@ service cloud.firestore {
           allow read: if request.auth != null && request.auth.uid == uid;
           allow create: if request.auth != null && request.auth.uid == uid
             && request.resource.data.keys().hasOnly(['count'])
+            && request.resource.data.count is int
             && request.resource.data.count == 1
             && request.resource.data.count <= roomData(roomId).maxLikesPerTanzaku;
           allow update: if request.auth != null && request.auth.uid == uid
             && request.resource.data.keys().hasOnly(['count'])
+            && request.resource.data.count is int
             && request.resource.data.count == resource.data.count + 1
             && request.resource.data.count <= roomData(roomId).maxLikesPerTanzaku;
           allow delete: if false;
@@ -77,10 +88,12 @@ service cloud.firestore {
         allow read: if request.auth != null && request.auth.uid == uid;
         allow create: if request.auth != null && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['tanzakuCount'])
+          && request.resource.data.tanzakuCount is int
           && request.resource.data.tanzakuCount == 1
           && request.resource.data.tanzakuCount <= roomData(roomId).maxTanzakuPerUser;
         allow update: if request.auth != null && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['tanzakuCount'])
+          && request.resource.data.tanzakuCount is int
           && request.resource.data.tanzakuCount == resource.data.tanzakuCount + 1
           && request.resource.data.tanzakuCount <= roomData(roomId).maxTanzakuPerUser;
         allow delete: if false;

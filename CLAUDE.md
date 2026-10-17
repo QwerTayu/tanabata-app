@@ -12,6 +12,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run build` — 本番ビルド(型チェックも含む)
 - `npm run lint` — ESLint実行
 - `npx tsc --noEmit` — 型チェックのみ実行
+- `npm run test:rules` — Firestoreエミュレータで`firestore.rules`のテスト(`tests/`)を実行(JavaとNode 22.18以上が必要)
+- `npm run deploy:rules` — `firestore.rules`を本番(`.firebaserc`のプロジェクト)にデプロイ
 
 ## プロジェクトの状態
 
@@ -28,7 +30,7 @@ Next.jsアプリとして実装済み(scaffold + Firebase連携 + 全画面の�
 
 - **技術スタック**: Next.js (App Router, TypeScript, Tailwind) + Firebase Firestore(クライアントSDKのみ) + Firebase Anonymous Authentication + Vercel。`firebase-admin`・API Route・ログイン画面は使用しない。
 - **ロール判定はURLのみで、サーバー側の強制はない**: `/{roomId}` = 参加者画面、`/{roomId}/admin` = 管理者画面。ルームキーを知っていれば誰でも管理者画面に到達できる。これは意図的な仕様(トレードオフとして明記済み)であり、認証を追加して「直す」対象ではない。
-- **Firestoreセキュリティルールで投稿上限・いいね上限・投稿者IDを強制する**(`firestore.rules`参照)。一方で管理者操作(ルームの更新・削除、短冊の削除)は誰でも可能なまま。投稿上限は`rooms/{roomId}/authorCounters/{uid}`、いいね上限は`.../tanzaku/{tanzakuId}/likedBy/{uid}`を、短冊作成・`likeCount`更新と同じトランザクションで+1し、ルールは`getAfter()`で「同じ書き込みで+1されたこと」を検証する。
+- **Firestoreセキュリティルールで投稿上限・いいね上限・投稿者IDを強制する**(`firestore.rules`参照)。一方で管理者操作(ルームの更新・削除、短冊の削除)は誰でも可能なまま。投稿上限は`rooms/{roomId}/authorCounters/{uid}`、いいね上限は`.../tanzaku/{tanzakuId}/likedBy/{uid}`を、短冊作成・`likeCount`更新と同じトランザクションで+1し、ルールは`getAfter()`で「同じ書き込みで+1されたこと」を検証する。短冊のドキュメントIDは自動IDではなく`{uid}__{+1後のカウンタ値}`に固定し、1回のバッチでカウンタ+1と短冊の複数作成をする迂回を防いでいる。
 - **read数節約のための「公開トグル」**: ルームには `revealed: boolean` フラグがある。管理者がこれをONにするまで、参加者のFirestoreリスナーは `where('authorUid', '==', uid)` で自分の短冊のみに絞られる(全件購読ではない)。これはSpark(無料)プランのread消費を抑えるための工夫であり、プライバシー機能ではない。管理者は `revealed` の状態に関わらず常に全件閲覧できる。
 - **`where`と`orderBy`を異なるフィールドで組み合わせない**: Firestoreの複合インデックス要求を避けるため、`subscribeTanzaku`(`lib/tanzaku.ts`)は絞り込みのみFirestoreに投げ、`createdAt`順の並び替えはクライアント側の配列ソートで行う。
 - **上限値はルームごとに可変**: `rooms/{roomId}`の`maxTanzakuPerUser`(初期値5)・`maxLikesPerTanzaku`(初期値3)を管理者画面から編集でき、ルールもこの値を読む。投稿者IDは匿名認証の`uid`で、短冊の`authorUid`フィールドに保存する。localStorageはハンドルネームと表示トグルにだけ使う。
